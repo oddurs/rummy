@@ -25,9 +25,9 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install cairn
         run: curl -fsSL https://raw.githubusercontent.com/oddurs/cairn/main/install.sh | CAIRN_VERSION=0.2.1 sh
-      - run: ~/.local/bin/cairn check
+      - run: cairn check
       - name: ROADMAP.md is up to date
-        run: ~/.local/bin/cairn render --check
+        run: cairn render --check
 
   shots:
     runs-on: ubuntu-latest
