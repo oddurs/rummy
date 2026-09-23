@@ -1,0 +1,328 @@
+# cairn.toml — the schema for rummy's roadmap.
+#
+# rummy is a graphics library whose whole pitch is "this looks stunning and
+# costs nothing". So the schema tracks two things a generic tracker doesn't:
+# how something is judged by eye (the `look` and `scene` types, the `review`
+# status) and what it may cost (the `budget` field, the `perf` type).
+#
+#   cairn board           the work, by status
+#   cairn roadmap         milestones with progress
+#   cairn next            what can be started right now
+#   cairn check           validate; CI runs this
+
+format = 3
+
+[project]
+name = "rummy"
+description = "Real-time 3D scenes rendered as ASCII in WebGL2. Built for hero backgrounds."
+dir = "cairn/items"
+id_width = 4
+default_type = "feature"
+default_status = "idea"
+url = "https://github.com/oddurs/rummy/blob/main"
+
+# ─── Item types ──────────────────────────────────────────────────────────────
+
+[[type]]
+name = "feature"
+icon = "+"
+color = "cyan"
+description = "new capability in the engine or its API"
+template = """
+## Problem
+
+## Proposal
+
+## Cost
+
+What it adds per frame, to the bundle, and to the API surface.
+
+## Acceptance criteria
+
+- [ ]
+"""
+
+[[type]]
+name = "look"
+icon = "◐"
+color = "magenta"
+description = "image quality or art direction; judged by eye, against screenshots"
+template = """
+## Now
+
+What it looks like today, and what is wrong with it. Link a screenshot.
+
+## Target
+
+What it should look like. References welcome.
+
+## Approach
+
+## How we judge it
+
+Which scenes and palettes to compare, and what "better" means in a side-by-side.
+
+## Acceptance criteria
+
+- [ ] Before/after screenshots attached to the PR
+- [ ] Frame cost within `budget`
+"""
+
+[[type]]
+name = "scene"
+icon = "◆"
+color = "blue"
+description = "a built-in scene"
+template = """
+## Concept
+
+## Why it works as a hero
+
+Where the copy sits, what moves, what the pointer does.
+
+## Technique
+
+## Acceptance criteria
+
+- [ ] Reads well at 10px and at 16px
+- [ ] Looks right in every demo palette, mono and scene colour
+- [ ] Holds `budget` on the reference laptop
+- [ ] Has a still frame worth showing under reduced motion
+"""
+
+[[type]]
+name = "perf"
+icon = "»"
+color = "green"
+description = "speed, memory or bundle size; must be measured, not assumed"
+template = """
+## Where the time goes
+
+Measured, with the bench page or a GPU timer. Numbers, not impressions.
+
+## Proposal
+
+## Before → after
+
+| | before | after |
+|---|---|---|
+| | | |
+
+## Acceptance criteria
+
+- [ ]
+"""
+
+[[type]]
+name = "spike"
+icon = "?"
+color = "yellow"
+description = "a question to answer before committing to a design"
+template = """
+## Question
+
+## Why it matters
+
+## What we tried
+
+## Answer
+
+## Decision
+"""
+
+[[type]]
+name = "bug"
+icon = "!"
+color = "red"
+template = """
+## What happens
+
+## What should happen
+
+## Reproduction
+
+Browser, GPU, DPR, scene, options.
+
+1.
+"""
+
+[[type]]
+name = "docs"
+icon = "*"
+color = "blue"
+
+[[type]]
+name = "chore"
+icon = "~"
+color = "gray"
+
+[[type]]
+name = "milestone"
+description = "a release"
+groups = "one"
+inverse = "scheduled"
+
+# ─── Statuses ────────────────────────────────────────────────────────────────
+# `review` exists because visual work is not done when it compiles; it is done
+# when someone has looked at the before/after and agreed it is better.
+
+[[status]]
+name = "idea"
+category = "open"
+color = "gray"
+
+[[status]]
+name = "planned"
+category = "open"
+color = "blue"
+
+[[status]]
+name = "exploring"
+label = "exploring"
+category = "active"
+color = "magenta"
+
+[[status]]
+name = "building"
+label = "building"
+category = "active"
+color = "yellow"
+
+[[status]]
+name = "review"
+label = "in review"
+category = "active"
+color = "cyan"
+
+[[status]]
+name = "blocked"
+category = "active"
+color = "red"
+
+[[status]]
+name = "shipped"
+category = "done"
+color = "green"
+
+[[status]]
+name = "dropped"
+category = "dropped"
+color = "gray"
+board = false
+
+# ─── Fields ──────────────────────────────────────────────────────────────────
+
+[[field]]
+name = "priority"
+kind = "enum"
+values = ["p0", "p1", "p2", "p3"]
+default = "p2"
+column = true
+description = "p0 blocks its milestone"
+
+[[field]]
+name = "pillar"
+kind = "enum"
+values = ["look", "motion", "content", "speed", "reach", "craft", "launch"]
+column = true
+description = "which part of 'stunning' this serves; see the roadmap intro"
+
+[[field]]
+name = "area"
+kind = "enum"
+values = ["engine", "atlas", "scenes", "api", "adapters", "demo", "docs", "infra"]
+description = "where in the code it lands"
+
+[[field]]
+name = "effort"
+kind = "enum"
+values = ["s", "m", "l", "xl"]
+description = "rough size, not an estimate"
+
+[[field]]
+name = "budget"
+kind = "text"
+description = "the most it may cost, e.g. '<=0.3 ms GPU at 1080p' or '+1 KB gz'"
+
+[[field]]
+name = "breaking"
+kind = "bool"
+description = "changes the public API; goes in the release notes"
+
+[[field]]
+name = "due"
+kind = "date"
+description = "when a milestone is meant to land"
+
+[[field]]
+name = "part_of"
+kind = "ref"
+target = "*"
+cardinality = "many"
+acyclic = true
+rollup = true
+inverse = "contains"
+description = "a larger piece of work this belongs to"
+
+# ─── Views ───────────────────────────────────────────────────────────────────
+
+[[view]]
+name = "now"
+description = "what is actually being worked on"
+filter = "category=active"
+sort = "priority,id"
+
+[[view]]
+name = "next"
+description = "planned work, most important first"
+filter = "status=planned"
+sort = "milestone,priority"
+
+[[view]]
+name = "review"
+description = "waiting for someone to look at the before/after"
+filter = "status=review"
+
+[[view]]
+name = "looks"
+description = "everything judged by eye"
+filter = "pillar=look,category!=done"
+sort = "milestone,priority"
+
+[[view]]
+name = "speed"
+description = "open performance work"
+filter = "pillar=speed,category!=done"
+sort = "priority"
+
+[[view]]
+name = "breaking"
+description = "API changes still to land before 1.0"
+filter = "breaking=true,category!=done"
+
+[[view]]
+name = "triage"
+description = "items missing a milestone or a pillar"
+filter = "milestone=,category!=done"
+columns = ["id", "type", "title", "pillar", "created"]
+
+# ─── Hooks ───────────────────────────────────────────────────────────────────
+
+[hooks]
+after-create = "cairn render -q"
+after-change = "cairn render -q"
+after-remove = "cairn render -q"
+
+# ─── Rendered roadmap ────────────────────────────────────────────────────────
+
+[render]
+target = "ROADMAP.md"
+title = "Roadmap"
+group_by = "milestone"
+include = "category!=dropped"
+checkbox = true
+show_ids = true
+progress = true
+group_by_status = true
+link_items = true
+header = "docs/roadmap-intro.md"
