@@ -81,31 +81,66 @@ export function createTexture(gl: WebGL2RenderingContext, spec: TextureSpec): We
 }
 
 export interface Target {
-  tex: WebGLTexture;
+  /** One texture per colour attachment. */
+  textures: WebGLTexture[];
   fb: WebGLFramebuffer;
   width: number;
   height: number;
 }
 
-/** An RGBA8 render target sampled with texelFetch. */
-export function createTarget(gl: WebGL2RenderingContext, width: number, height: number): Target {
-  const tex = createTexture(gl, {
-    width,
-    height,
-    internalFormat: gl.RGBA8,
-    format: gl.RGBA,
-    type: gl.UNSIGNED_BYTE,
-  });
+export interface TargetSpec {
+  /** Colour attachments; more than one makes a multiple-render-target framebuffer. */
+  attachments?: number;
+  filter?: number;
+  /** Allocate a full mip chain (immutable storage) for generateMipmap. */
+  mipmaps?: boolean;
+}
+
+/** An RGBA8 render target, sampled with texelFetch unless `filter` says otherwise. */
+export function createTarget(
+  gl: WebGL2RenderingContext,
+  width: number,
+  height: number,
+  spec: TargetSpec = {},
+): Target {
+  const count = spec.attachments ?? 1;
   const fb = gl.createFramebuffer()!;
   gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
-  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  const textures: WebGLTexture[] = [];
+  const buffers: number[] = [];
+  for (let i = 0; i < count; i++) {
+    let tex: WebGLTexture;
+    if (spec.mipmaps) {
+      tex = gl.createTexture()!;
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      const levels = Math.floor(Math.log2(Math.max(width, height))) + 1;
+      gl.texStorage2D(gl.TEXTURE_2D, levels, gl.RGBA8, width, height);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST_MIPMAP_NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    } else {
+      tex = createTexture(gl, {
+        width,
+        height,
+        internalFormat: gl.RGBA8,
+        format: gl.RGBA,
+        type: gl.UNSIGNED_BYTE,
+        filter: spec.filter,
+      });
+    }
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0 + i, gl.TEXTURE_2D, tex, 0);
+    textures.push(tex);
+    buffers.push(gl.COLOR_ATTACHMENT0 + i);
+  }
+  if (count > 1) gl.drawBuffers(buffers);
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-  return { tex, fb, width, height };
+  return { textures, fb, width, height };
 }
 
 export function deleteTarget(gl: WebGL2RenderingContext, t: Target | null): void {
   if (!t) return;
-  gl.deleteTexture(t.tex);
+  for (const tex of t.textures) gl.deleteTexture(tex);
   gl.deleteFramebuffer(t.fb);
 }
 
@@ -132,4 +167,18 @@ export function parseColor(css: string): [number, number, number, number] {
   if (colorCache.size > 64) colorCache.clear();
   colorCache.set(css, rgba);
   return rgba;
+}
+
+/** sRGB colour (0..1) to OKLab, matching the glyph shader's conversion. */
+export function oklab([r, g, b]: readonly number[]): [number, number, number] {
+  const lin = (c: number) => Math.pow(c, 2.2);
+  const [lr, lg, lb] = [lin(r), lin(g), lin(b)];
+  const l = Math.cbrt(0.4122214708 * lr + 0.5363325363 * lg + 0.0514459929 * lb);
+  const m = Math.cbrt(0.2119034982 * lr + 0.6806995451 * lg + 0.1073969566 * lb);
+  const s = Math.cbrt(0.0883024619 * lr + 0.2817188376 * lg + 0.6299787005 * lb);
+  return [
+    0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s,
+    1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s,
+    0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s,
+  ];
 }

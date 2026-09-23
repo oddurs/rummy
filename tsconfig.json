@@ -11,7 +11,8 @@
     "isolatedModules": true,
     "verbatimModuleSyntax": true,
     "skipLibCheck": true,
-    "noEmit": true
+    "noEmit": true,
+    "allowImportingTsExtensions": true
   },
-  "include": ["src", "demo", "*.config.ts"]
+  "include": ["src", "demo", "scripts/*.ts", "*.config.ts"]
 }

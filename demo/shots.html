@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>rummy — contact sheet</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+    <style>
+      :root { color-scheme: dark; }
+      body { margin: 0; padding: 24px 16px; background: #0b0b0c; color: #cfcfd4; font: 12px/1.4 'JetBrains Mono', ui-monospace, monospace; }
+      h1 { font-size: 14px; font-weight: 500; margin: 0 0 4px; }
+      p { margin: 0 0 20px; color: #7d7d86; }
+      .sheet { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
+      figure { margin: 0; }
+      figure img { width: 100%; display: block; border: 1px solid #222; }
+      figcaption { margin-top: 4px; color: #7d7d86; }
+      #stage { position: fixed; left: 0; top: 0; width: 480px; height: 300px; visibility: hidden; }
+    </style>
+  </head>
+  <body>
+    <h1>rummy contact sheet</h1>
+    <p id="status">rendering…</p>
+    <div class="sheet" id="sheet"></div>
+    <canvas id="stage"></canvas>
+    <script type="module" src="./shots.ts"></script>
+  </body>
+</html>

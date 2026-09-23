@@ -1,25 +1,21 @@
-import { Rummy, charsets, scenes, type RummyOptions, type SceneName } from '../src';
-
-const palettes = {
-  phosphor: { fg: '#9dffb0', bg: '#050805', accent: '#9dffb0', text: '#d7ffe0', dim: '#6f8f76', colorMix: 0 },
-  amber: { fg: '#ffb000', bg: '#0b0700', accent: '#ffb000', text: '#ffe7b0', dim: '#8f7a4f', colorMix: 0 },
-  paper: { fg: '#1b1b18', bg: '#efe9dc', accent: '#1b1b18', text: '#1b1b18', dim: '#77736a', colorMix: 0 },
-  ice: { fg: '#bfe6ff', bg: '#04070d', accent: '#8fd3ff', text: '#e3f4ff', dim: '#5d7489', colorMix: 0 },
-  scene: { fg: '#ffffff', bg: '#030304', accent: '#ff5fc8', text: '#f3eefc', dim: '#7c7590', colorMix: 1 },
-} as const;
-type Palette = keyof typeof palettes;
+import { Rummy, charsets, palettes, scenes, type RummyOptions, type SceneName } from '../src';
+import { lookDefaults, looks, type LookName } from './looks';
 
 interface State {
   scene: SceneName | 'media';
   charset: keyof typeof charsets;
   mode: RummyOptions['mode'];
-  palette: Palette;
+  look: LookName;
+  quantize: keyof typeof palettes | 'none';
   fontSize: number;
   contrast: number;
   directionalContrast: number;
   edges: number;
   gain: number;
-  scanlines: number;
+  glow: number;
+  cellBackground: number;
+  antialias: number;
+  crt: boolean;
   quality: boolean;
   paused: boolean;
 }
@@ -28,13 +24,17 @@ const initial: State = {
   scene: 'ring',
   charset: 'ascii',
   mode: 'shape',
-  palette: 'phosphor',
+  look: 'phosphor',
+  quantize: 'none',
   fontSize: 12,
   contrast: 1.6,
   directionalContrast: 2,
-  edges: 0.5,
+  edges: 0.6,
   gain: 0.85,
-  scanlines: 0,
+  glow: -1,
+  cellBackground: -1,
+  antialias: 0.6,
+  crt: false,
   quality: false,
   paused: false,
 };
@@ -51,7 +51,8 @@ function readHash(): State {
   }
   if (state.scene === 'media' || !(state.scene in scenes)) state.scene = initial.scene;
   if (!(state.charset in charsets)) state.charset = initial.charset;
-  if (!(state.palette in palettes)) state.palette = initial.palette;
+  if (!(state.look in looks)) state.look = initial.look;
+  if (state.quantize !== 'none' && !(state.quantize in palettes)) state.quantize = 'none';
   return state;
 }
 
@@ -80,53 +81,60 @@ function focalOffset(): [number, number] {
   return innerWidth > 900 ? [Math.min(0.85, aspect * 0.32), 0] : [0, 0.45];
 }
 
+/** -1 on a slider means "whatever the look says". */
+const orLook = (v: number, look: number | undefined) => (v < 0 ? (look ?? 0) : v);
+
 function toOptions(s: State): Partial<RummyOptions> {
-  const p = palettes[s.palette];
+  const look: Partial<RummyOptions> = { ...lookDefaults, ...looks[s.look].options };
   return {
+    ...look,
     scene: s.scene === 'media' && media ? media : scenes[s.scene as SceneName] ?? scenes.ring,
     charset: charsets[s.charset],
     mode: s.mode,
-    fg: p.fg,
-    bg: p.bg,
-    colorMix: p.colorMix,
     fontSize: s.fontSize,
     contrast: s.contrast,
     directionalContrast: s.directionalContrast,
     edges: s.edges,
     gain: s.gain,
-    scanlines: s.scanlines,
+    glow: orLook(s.glow, look.glow),
+    cellBackground: orLook(s.cellBackground, look.cellBackground),
+    antialias: s.antialias,
+    palette: s.quantize === 'none' ? look.palette ?? null : palettes[s.quantize],
+    colorMix: s.quantize === 'none' ? look.colorMix : 1,
+    crt: s.crt || look.crt || false,
     quality: s.quality ? 2 : 1,
     offset: s.scene === 'media' ? [0, 0] : focalOffset(),
   };
 }
 
-function applyPalette(name: Palette): void {
-  const p = palettes[name];
+function applyLook(name: LookName): void {
+  const { options, theme } = looks[name] as (typeof looks)[LookName] & { theme: { light?: boolean } };
   const root = document.documentElement.style;
-  root.setProperty('--bg', p.bg);
-  root.setProperty('--fg', p.text);
-  root.setProperty('--accent', p.accent);
-  root.setProperty('--dim', p.dim);
-  root.setProperty('--line', `color-mix(in srgb, ${p.accent} 25%, transparent)`);
-  root.setProperty('--panel', `color-mix(in srgb, ${p.bg} 85%, transparent)`);
-  document.documentElement.style.colorScheme = name === 'paper' ? 'light' : 'dark';
+  root.setProperty('--bg', options.bg ?? '#000');
+  root.setProperty('--fg', theme.text);
+  root.setProperty('--accent', theme.accent);
+  root.setProperty('--dim', theme.dim);
+  root.setProperty('--line', `color-mix(in srgb, ${theme.accent} 25%, transparent)`);
+  root.setProperty('--panel', `color-mix(in srgb, ${options.bg ?? '#000'} 85%, transparent)`);
+  root.colorScheme = theme.light ? 'light' : 'dark';
 }
 
 function syncForm(s: State): void {
   for (const el of Array.from(form.elements) as HTMLInputElement[]) {
     const k = el.name as keyof State;
     if (!(k in s)) continue;
-    if (el.type === 'checkbox') el.checked = Boolean(s[k]);
-    else el.value = String(s[k]);
+    const shown = k === 'glow' || k === 'cellBackground' ? Number(toOptions(s)[k]) : s[k];
+    if (el.type === 'checkbox') el.checked = Boolean(shown);
+    else el.value = String(shown);
     const out = form.elements.namedItem(`${k}Out`) as HTMLOutputElement | null;
-    if (out) out.value = String(s[k]);
+    if (out) out.value = String(shown);
   }
   sceneLabel.textContent = s.scene === 'media' ? 'dropped-file' : s.scene;
 }
 
 const rummy = new Rummy(canvas, toOptions(state));
 if (state.paused) rummy.pause();
-applyPalette(state.palette);
+applyLook(state.look);
 syncForm(state);
 
 function update(next: State): void {
@@ -134,7 +142,7 @@ function update(next: State): void {
   rummy.set(toOptions(state));
   if (state.paused) rummy.pause();
   else rummy.play();
-  applyPalette(state.palette);
+  applyLook(state.look);
   syncForm(state);
   writeHash(state);
 }

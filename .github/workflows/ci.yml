@@ -16,4 +16,60 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # typecheck, library build, bundle-size gate, demo build
       - run: pnpm check
+
+  roadmap:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install cairn
+        run: curl -fsSL https://raw.githubusercontent.com/oddurs/cairn/main/install.sh | CAIRN_VERSION=0.2.1 sh
+      - run: cairn check
+      - name: ROADMAP.md is up to date
+        run: cairn render --check
+
+  shots:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build:demo
+
+      # Render the base commit with this commit's driver, in the same
+      # environment, so the diff shows only what this change did.
+      - name: Render the base for comparison
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [ -n "$BASE" ] && git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            git worktree add ../base "$BASE"
+            if [ -f ../base/demo/shots.html ]; then
+              (cd ../base && pnpm install --frozen-lockfile && pnpm build:demo)
+              node scripts/shots.mjs --site ../base/site --out shots/base
+            else
+              echo "Base commit has no contact sheet; nothing to compare."
+            fi
+          fi
+
+      - name: Render and compare
+        run: |
+          if [ -d shots/base ]; then
+            node scripts/shots.mjs --compare shots/base --sheet
+          else
+            node scripts/shots.mjs --sheet
+          fi
+          cat shots/current/summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: shots
+          path: shots/current
