@@ -46,7 +46,11 @@
     "shots": "pnpm build:demo && node scripts/shots.mjs --sheet",
     "bench": "pnpm build:demo && node scripts/bench.mjs",
     "item": "bash scripts/item.sh",
-    "pr": "bash scripts/pr.sh"
+    "pr": "bash scripts/pr.sh",
+    "web": "pnpm --filter rummy-web dev",
+    "web:build": "pnpm --filter rummy-web build",
+    "web:start": "pnpm --filter rummy-web start",
+    "web:check": "pnpm --filter rummy-web check"
   },
   "devDependencies": {
     "typescript": "^7.0.2",

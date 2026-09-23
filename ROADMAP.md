@@ -88,7 +88,7 @@ Good ideas with no date. Pulled into a release when they earn it.
 
 ## v0.3 — Alive
 
-`··········` 0% · 0 of 8 done · due 2026-11-17
+`··········` 0% · 0 of 9 done · due 2026-11-17
 
 Motion that looks intentional. No glyph boil, transitions between scenes, scroll and pointer that feel physical, and an intro that earns the first second on the page.
 
@@ -105,6 +105,10 @@ Motion that looks intentional. No glyph boil, transitions between scenes, scroll
 
 - [ ] [`0018`](https://github.com/oddurs/rummy/blob/main/cairn/items/0018-stop-glyph-boil-with-temporal-hysteresis.md) Stop glyph boil with temporal hysteresis <sup>look · p0 · motion</sup>
 - [ ] [`0020`](https://github.com/oddurs/rummy/blob/main/cairn/items/0020-custom-uniforms-settable-live.md) Custom uniforms, settable live <sup>feature · p0 · content</sup>
+
+### in review
+
+- [ ] [`0053`](https://github.com/oddurs/rummy/blob/main/cairn/items/0053-a-sveltekit-website-with-a-server-on-port-4499.md) A SvelteKit website with a server, on port 4499 <sup>feature · p1 · launch</sup>
 
 ## v0.4 — Your world
 

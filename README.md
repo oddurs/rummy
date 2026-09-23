@@ -207,9 +207,12 @@ pnpm dev          # demo at http://localhost:5173 (/shots.html, /bench.html too)
 pnpm check        # typecheck, library build, size gate, demo build
 pnpm shots        # render the contact sheet to shots/current, diff against shots/baseline
 pnpm bench        # GPU time per pass on this machine's real GPU
+pnpm web          # the website (SvelteKit) on http://localhost:4499
 ```
 
-`src/` is the library, `demo/` is the site deployed to GitHub Pages, `scripts/` holds the
+`src/` is the library, `web/` is the website (SvelteKit with a Node server; see
+[web/README.md](web/README.md)), `demo/` is the test harness deployed to GitHub Pages,
+and `scripts/` holds the
 screenshot harness, bench driver and size gate. They drive headless Chrome over the
 DevTools protocol with no npm dependencies. Visual changes show up in CI as a
 before/after contact sheet on every pull request.

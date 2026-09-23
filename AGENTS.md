@@ -1,7 +1,7 @@
 # Working on rummy
 
-Library in `src/`, demo and test harness in `demo/`, tooling in `scripts/`. The roadmap
-is in `cairn/items/` (see below).
+Library in `src/`, demo and test harness in `demo/`, website in `web/` (SvelteKit),
+tooling in `scripts/`. The roadmap is in `cairn/items/` (see below).
 
 ## The loop
 
@@ -16,6 +16,9 @@ Every change goes through a branch and a pull request. Nothing is committed to `
      you changed, save a baseline on `main` first (`pnpm shots --save-baseline`);
      later runs diff against it automatically.
    - Per-frame cost: `pnpm bench` (real GPU, headless).
+   - Website: `pnpm web` serves it on http://localhost:4499 with hot reload, including
+     edits to the library in `src/`. `pnpm web:check` runs svelte-check (warnings
+     fail). `pnpm web:build && pnpm web:start` runs the production Node server on 4499.
 3. **Record it on the item:** `cairn tick`, `cairn note` with the evidence (numbers,
    shot names), then `cairn set <id> status=review` for anything judged by eye, or
    `status=shipped` when every criterion is verified. The item change ships in the same
@@ -23,9 +26,9 @@ Every change goes through a branch and a pull request. Nothing is committed to `
 4. **Ship:** commit, then `pnpm pr`. It runs the checks, pushes, opens the PR from your
    commit messages, and queues it to merge once CI is green. Add `--no-merge` when a
    person should look first.
-5. **CI:** `check`, `roadmap` (cairn valid, `ROADMAP.md` current) and `shots`
-   (contact sheet; the base-vs-head diff lands in the job summary). All three are
-   required to merge.
+5. **CI:** `check`, `web` (svelte-check and build), `roadmap` (cairn valid,
+   `ROADMAP.md` current) and `shots` (contact sheet; the base-vs-head diff lands in the
+   job summary). All are required to merge.
 
 Rules:
 - One item per branch.
