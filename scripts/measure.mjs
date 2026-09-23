@@ -5,6 +5,7 @@
  *   silhouettes  straight outlines draw as strokes (/ \ | _ - ' .), not letters
  *   motion       no boil (A→B→A flicker) and no lag against point sampling
  *   uniforms     custom uniforms apply live, merge, and never recompile
+ *   scroll       uScroll tracks the page with one layout read per frame
  *   exposure     auto-exposure holds still on a steady source and settles
  *                after a cut without overshooting
  *
@@ -74,6 +75,14 @@ check(u.changed, 'uniform values reach the scene (each change alters the frame)'
 check(u.compiles === 0, `set({ uniforms }) never recompiles (${u.compiles} shader compiles)`);
 check(u.merged, 'set({ uniforms }) merges with the existing values');
 check(u.warnings === 1, `an unknown uniform warns once and doesn't throw (${u.warnings} warning)`);
+
+// --- scroll --------------------------------------------------------------------------
+const sc = await chrome.evaluate('window.__shots.scrollCheck()');
+console.log(`\nscroll: tracked ${(sc.tracked * 100).toFixed(0)}% (expect 50), pinned ${(sc.pinned * 100).toFixed(0)}% (expect 25), ${sc.readsPerFrame.toFixed(2)} rect reads/frame, ${sc.readsWhilePaused} while paused`);
+check(Math.abs(sc.tracked - 0.5) < 0.06, 'uScroll follows the page (half scrolled → 0.5)');
+check(Math.abs(sc.pinned - 0.25) < 0.06, 'a number pins uScroll');
+check(sc.readsPerFrame <= 1.01, 'at most one layout read per frame');
+check(sc.readsWhilePaused === 0, 'no layout reads while paused');
 
 // --- exposure --------------------------------------------------------------------
 const exp = await chrome.evaluate('window.__shots.exposure()');

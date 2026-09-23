@@ -88,14 +88,13 @@ Good ideas with no date. Pulled into a release when they earn it.
 
 ## v0.3 — Alive
 
-`###·······` 22% · 2 of 9 done · due 2026-11-17
+`####······` 33% · 3 of 9 done · due 2026-11-17
 
 Motion that looks intentional. No glyph boil, transitions between scenes, scroll and pointer that feel physical, and an intro that earns the first second on the page.
 
 ### idea
 
 - [ ] [`0019`](https://github.com/oddurs/rummy/blob/main/cairn/items/0019-phosphor-persistence-trails-that-decay-at-cell-resolution.md) Phosphor persistence: trails that decay at cell resolution <sup>look · p2 · motion</sup>
-- [ ] [`0021`](https://github.com/oddurs/rummy/blob/main/cairn/items/0021-scroll-driven-scenes.md) Scroll-driven scenes <sup>feature · p1 · motion</sup>
 - [ ] [`0022`](https://github.com/oddurs/rummy/blob/main/cairn/items/0022-transitions-between-scenes-decode-wipe-rain.md) Transitions between scenes: decode, wipe, rain <sup>feature · p1 · motion</sup>
 - [ ] [`0023`](https://github.com/oddurs/rummy/blob/main/cairn/items/0023-pointer-as-a-force-ripples-lens-shockwave.md) Pointer as a force: ripples, lens, shockwave <sup>feature · p2 · motion</sup>
 - [ ] [`0024`](https://github.com/oddurs/rummy/blob/main/cairn/items/0024-an-intro-worth-the-first-second-type-on-reveal.md) An intro worth the first second: type-on reveal <sup>feature · p2 · motion</sup>
@@ -108,6 +107,7 @@ Motion that looks intentional. No glyph boil, transitions between scenes, scroll
 ### shipped
 
 - [x] [`0020`](https://github.com/oddurs/rummy/blob/main/cairn/items/0020-custom-uniforms-settable-live.md) Custom uniforms, settable live <sup>feature · p0 · content</sup>
+- [x] [`0021`](https://github.com/oddurs/rummy/blob/main/cairn/items/0021-scroll-driven-scenes.md) Scroll-driven scenes <sup>feature · p1 · motion</sup>
 - [x] [`0053`](https://github.com/oddurs/rummy/blob/main/cairn/items/0053-a-sveltekit-website-with-a-server-on-port-4499.md) A SvelteKit website with a server, on port 4499 <sup>feature · p1 · launch</sup>
 
 ## v0.4 — Your world

@@ -2,12 +2,14 @@
 id: 21
 title: Scroll-driven scenes
 type: feature
-status: idea
+status: shipped
 milestone: v0.3
+assignee: Oddur Sigurdsson
+claimed: 2026-09-23
 depends_on:
 - 20
 created: 2026-09-22
-updated: 2026-09-22
+updated: 2026-09-23
 priority: p1
 pillar: motion
 area: api
@@ -36,6 +38,29 @@ Negligible; no work while the canvas is off screen (already paused there).
 
 ## Acceptance criteria
 
-- [ ] `uScroll` available in every scene, 0..1
-- [ ] At least two built-in scenes respond to it
-- [ ] No layout thrash (one rect read per frame, none when paused)
+- [x] `uScroll` available in every scene, 0..1
+- [x] At least two built-in scenes respond to it
+- [x] No layout thrash (one rect read per frame, none when paused)
+
+## Built
+
+- `uScroll` goes from 0 (canvas top at the viewport top) to 1 (scrolled out),
+  smoothed like `uMouse`.
+- `scroll: true | false | number`. A number pins it, for scrubbers, your own scroll
+  timelines, and deterministic shots.
+- Under prefers-reduced-motion it stays at 0, since scroll-linked motion is a
+  well-known vestibular trigger.
+
+Scenes:
+- **ring:** pulls back and turns away
+- **terrain:** the camera climbs over the valley and tips down
+- **globe:** recedes and spins
+- **tunnel:** flies forward
+
+The `*-scrolled` shots pin 0.6.
+
+Checked by `pnpm measure` (in CI), with a test scene that draws `uScroll` as a fill:
+- half-scrolled page → 50%
+- pinned 0.25 → 25%
+- exactly **1.00** `getBoundingClientRect` per frame while running
+- **0** while paused (the loop doesn't run, so nothing reads layout)
