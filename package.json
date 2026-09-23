@@ -1,0 +1,54 @@
+{
+  "name": "@oddurs/rummy",
+  "version": "0.1.0",
+  "description": "Real-time 3D scenes rendered as ASCII in WebGL2. Built for hero backgrounds.",
+  "keywords": [
+    "ascii",
+    "webgl",
+    "webgl2",
+    "shader",
+    "glsl",
+    "hero",
+    "background",
+    "terminal",
+    "retro",
+    "3d"
+  ],
+  "license": "MIT",
+  "author": "Oddur Sigurdsson",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/oddurs/rummy.git"
+  },
+  "homepage": "https://oddurs.github.io/rummy/",
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/rummy.js",
+  "module": "./dist/rummy.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/rummy.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -p tsconfig.build.json && vite build --config vite.lib.config.ts",
+    "build:demo": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "check": "pnpm typecheck && pnpm build && pnpm build:demo"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2",
+    "vite": "^8.3.0"
+  },
+  "packageManager": "pnpm@12.3.4",
+  "engines": {
+    "node": ">=20"
+  }
+}

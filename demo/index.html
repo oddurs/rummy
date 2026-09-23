@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>rummy — 3D scenes rendered as ASCII</title>
+    <meta name="description" content="Real-time 3D scenes rendered as ASCII in WebGL2. Built for hero backgrounds." />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <header class="hero">
+      <canvas id="bg" aria-hidden="true"></canvas>
+      <div class="hero-copy">
+        <p class="prompt"><span>~/rummy</span> $ render --scene <b id="scene-label">ring</b></p>
+        <h1>3D scenes,<br />rendered in text.</h1>
+        <p class="lede">
+          A tiny WebGL2 engine that turns raymarched scenes, video and canvases into live ASCII.
+          Shades one sample per glyph region instead of every pixel, so it idles on a laptop GPU.
+        </p>
+        <div class="actions">
+          <a class="btn primary" href="https://github.com/oddurs/rummy">github.com/oddurs/rummy</a>
+          <code class="install">pnpm add @oddurs/rummy</code>
+        </div>
+      </div>
+      <div class="stats" id="stats" aria-live="off"></div>
+    </header>
+
+    <aside class="panel" id="panel">
+      <button class="panel-toggle" id="panel-toggle" aria-expanded="true">[-] tune</button>
+      <form class="panel-body" id="controls" autocomplete="off">
+        <label>scene
+          <select name="scene">
+            <option>ring</option><option>terrain</option><option>blobs</option><option>globe</option><option>tunnel</option>
+            <option value="media" disabled>dropped file</option>
+          </select>
+        </label>
+        <label>charset
+          <select name="charset">
+            <option>ascii</option><option>classic</option><option>blocks</option><option>shade</option>
+            <option>lines</option><option>binary</option><option>katakana</option>
+          </select>
+        </label>
+        <label>mode
+          <select name="mode"><option>shape</option><option>density</option></select>
+        </label>
+        <label>palette
+          <select name="palette">
+            <option value="phosphor">phosphor</option>
+            <option value="amber">amber</option>
+            <option value="paper">paper</option>
+            <option value="ice">ice</option>
+            <option value="scene">scene colour</option>
+          </select>
+        </label>
+        <label>font size <output name="fontSizeOut"></output>
+          <input type="range" name="fontSize" min="6" max="28" step="1" />
+        </label>
+        <label>contrast <output name="contrastOut"></output>
+          <input type="range" name="contrast" min="1" max="4" step="0.05" />
+        </label>
+        <label>neighbour contrast <output name="directionalContrastOut"></output>
+          <input type="range" name="directionalContrast" min="1" max="5" step="0.05" />
+        </label>
+        <label>edges <output name="edgesOut"></output>
+          <input type="range" name="edges" min="0" max="1" step="0.01" />
+        </label>
+        <label>gain <output name="gainOut"></output>
+          <input type="range" name="gain" min="0.3" max="3" step="0.01" />
+        </label>
+        <label>scanlines <output name="scanlinesOut"></output>
+          <input type="range" name="scanlines" min="0" max="0.8" step="0.01" />
+        </label>
+        <label class="check"><input type="checkbox" name="quality" /> 2x supersample</label>
+        <label class="check"><input type="checkbox" name="paused" /> paused</label>
+        <p class="hint">drop an image or video anywhere to asciify it</p>
+      </form>
+    </aside>
+
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>
