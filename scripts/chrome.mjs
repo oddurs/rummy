@@ -107,8 +107,10 @@ export async function launch(url, { gpu = false, width = 1200, height = 900 } = 
       errors.push(d.exception?.description ?? d.text);
     }
     // Browser-level errors (CSP violations, failed loads) arrive as log entries.
+    // The browser's own favicon probe isn't the page's fault.
     if (msg.method === 'Log.entryAdded' && msg.params.entry.level === 'error') {
-      errors.push(msg.params.entry.text);
+      const { text, url = '' } = msg.params.entry;
+      if (!url.endsWith('/favicon.ico')) errors.push(url ? `${text} (${url})` : text);
     }
     if (msg.method === 'Runtime.consoleAPICalled' && msg.params.type === 'error') {
       errors.push(msg.params.args.map((a) => a.value ?? a.description).join(' '));
