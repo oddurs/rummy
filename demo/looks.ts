@@ -39,7 +39,7 @@ export const looks = {
     theme: { accent: '#ff5fc8', text: '#f3eefc', dim: '#7c7590' },
   },
   cga: {
-    options: { fg: '#ffffff', bg: '#000000', colorMix: 1, palette: palettes.cga, cellBackground: 0.35, dither: 0.6 },
+    options: { fg: '#ffffff', bg: '#000000', colorMix: 1, palette: palettes.cga, cellBackground: 0.35 },
     theme: { accent: '#55ffff', text: '#ffffff', dim: '#ff55ff' },
   },
   crt: {

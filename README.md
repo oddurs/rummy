@@ -131,7 +131,7 @@ All options are optional and can be changed later with `rummy.set()`.
 | `fg` / `bg` | `#9dffb0` / `#050805` | Any CSS colour; `bg: 'transparent'` to layer over content |
 | `colorMix` | `0` | 0 = monochrome `fg`, 1 = scene colour |
 | `palette` | `null` | Quantize colours to a palette, e.g. `palettes.cga` (up to 32 colours) |
-| `dither` | `0.5` | Ordered dither across cells when quantizing |
+| `dither` | `1` | Ordered dither across cells when quantizing; 1 spans the gap between neighbouring palette colours |
 | `cellBackground` | `0` | Two-tone cells: the darker part of each cell becomes its background |
 | `gain` / `gamma` | `0.85` / `1.15` | Tone curve before glyph matching |
 | `exposure` | `'source'` | A multiplier, `'auto'`, or `'source'` (auto for images and video, 1 for GLSL) |
@@ -150,9 +150,11 @@ All options are optional and can be changed later with `rummy.set()`.
 | `mouse` | `true` | Feed the pointer to `uMouse` |
 | `pauseOffscreen` | `true` | Stop when scrolled out of view |
 | `respectReducedMotion` | `true` | Hold the scene's still frame under `prefers-reduced-motion` |
-| `profile` | `false` | Measure GPU time per pass into `stats.gpu` |
+| `profile` | `false` | Measure GPU time per pass into `stats.gpu`, and exposure into `stats.exposure` |
 
-Methods: `set(options)`, `play()`, `pause()`, `render()`, `resize()`, `destroy()`.
+Methods: `set(options)`, `play()`, `pause()`, `render()`, `resize()`, `toText()`, `destroy()`.
+`toText()` returns the last frame as text, one line per row. It reads back the glyph
+grid, not the canvas, so it is cheap: paste a frame into a terminal or a code block.
 Properties: `time` (get/set, seconds), `stats` (`columns`, `rows`, `samples`, `width`,
 `height`, `fps`, `gpu`), `options`. Static: `Rummy.stillOf(scene)`.
 
@@ -207,6 +209,7 @@ pnpm dev          # demo at http://localhost:5173 (/shots.html, /bench.html too)
 pnpm check        # typecheck, library build, size gate, demo build
 pnpm shots        # render the contact sheet to shots/current, diff against shots/baseline
 pnpm bench        # GPU time per pass on this machine's real GPU
+pnpm measure      # silhouette and auto-exposure checks (also run in CI)
 pnpm web          # the website (SvelteKit) on http://localhost:4499
 ```
 

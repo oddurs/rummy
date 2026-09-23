@@ -179,9 +179,9 @@ vec4 scene(vec2 uv) {
   float fres = pow(1.0 - max(dot(n, -rd), 0.0), 3.0);
   float spec = pow(max(dot(r, l), 0.0), 32.0);
   // Studio reflection: a bright softbox above, a dark floor below.
-  float env = smoothstep(-0.1, 0.8, r.y) * 0.4 + 0.06;
+  float env = smoothstep(-0.1, 0.8, r.y) * 0.26 + 0.04;
   float fill = max(dot(n, normalize(vec3(0.7, -0.3, 0.6))), 0.0);
-  float lum = 0.03 + 0.45 * dif + 0.18 * fill + env + 0.35 * fres + 1.0 * spec;
+  float lum = 0.02 + 0.36 * dif * dif + 0.14 * fill + env + 0.3 * fres + 1.0 * spec;
   vec3 col = mix(vec3(1.0, 0.62, 0.25), vec3(1.0, 0.9, 0.75), spec) * lum;
   return vec4(col, t / 8.0);
 }`;

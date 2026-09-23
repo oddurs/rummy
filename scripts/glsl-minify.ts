@@ -15,7 +15,12 @@ export function minifyGlsl(source: string): string {
       out += `${out && !out.endsWith('\n') ? '\n' : ''}${line}\n`;
       continue;
     }
-    const tight = line.replace(/\s+/g, ' ').replace(/\s*([{}();,=<>*/!?:&|[\]])\s*/g, '$1');
+    const tight = line
+      .replace(/\s+/g, ' ')
+      .replace(/\s*([{}();,=<>*/!?:&|[\]])\s*/g, '$1')
+      // Binary + and -, unless joining them to a neighbouring sign would
+      // create ++, -- or a sign pair that reads differently.
+      .replace(/([^+\-\s]) ([+-]) (?=[^+\-\s])/g, '$1$2');
     out += out && !out.endsWith('\n') ? ` ${tight}` : tight;
   }
   return out;

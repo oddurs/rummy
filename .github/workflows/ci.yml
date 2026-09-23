@@ -87,6 +87,11 @@ jobs:
           fi
           cat shots/current/summary.md >> "$GITHUB_STEP_SUMMARY"
 
+      # Silhouettes draw as strokes; auto-exposure holds still and settles.
+      - name: Measure
+        shell: bash  # -eo pipefail, so tee can't hide a failed check
+        run: node scripts/measure.mjs | tee -a "$GITHUB_STEP_SUMMARY"
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -20,6 +20,7 @@ import {
   SCENE_PRELUDE,
   SOURCE_SCENE,
 } from './shaders';
+import { ascii } from './charsets';
 import { ring } from './scenes';
 import { GpuTimer, type GpuTimes } from './timer';
 
@@ -60,7 +61,7 @@ export interface RummyOptions {
   colorMix: number;
   /** Quantize cell colours to these (any CSS colours, up to 32). See `palettes`. */
   palette: readonly string[] | null;
-  /** Ordered dither across cells when quantizing, 0..1. */
+  /** Ordered dither across cells when quantizing, 0..1 (1 spans the gap between neighbouring palette colours). */
   dither: number;
   /** Two-tone cells: the darker part of each cell becomes its background, 0..1. */
   cellBackground: number;
@@ -113,16 +114,6 @@ export interface RummyOptions {
   profile: boolean;
 }
 
-export const charsets = {
-  /** All printable ASCII: the best fit for shape matching. */
-  ascii: Array.from({ length: 95 }, (_, i) => String.fromCharCode(32 + i)).join(''),
-  classic: ' .:-=+*#%@',
-  blocks: ' ▘▝▀▖▌▞▛▗▚▐▜▄▙▟█',
-  shade: ' ░▒▓█',
-  lines: ' ─│┌┐└┘├┤┬┴┼╱╲╳',
-  binary: ' 01',
-  katakana: ' ｦｱｳｴｵｶｷｹｺｻｼｽｾｿﾀﾂﾃﾅﾆﾇﾈﾊﾋﾎﾏﾐﾑﾒﾓﾔﾕﾗﾘﾜ012345789Z:.=*+-<>¦|',
-} as const;
 
 export const crtPreset: CrtOptions = { curvature: 0.5, vignette: 0.6, mask: 0.2, fringe: 0.75, flicker: 0.25 };
 const noCrt: CrtOptions = { curvature: 0, vignette: 0, mask: 0, fringe: 0, flicker: 0 };
@@ -133,13 +124,13 @@ export const defaults: RummyOptions = {
   fontFamily: '"JetBrains Mono", "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
   fontWeight: 500,
   lineHeight: 1.25,
-  charset: charsets.ascii,
+  charset: ascii,
   mode: 'shape',
   fg: '#9dffb0',
   bg: '#050805',
   colorMix: 0,
   palette: null,
-  dither: 0.5,
+  dither: 1,
   cellBackground: 0,
   gain: 0.85,
   gamma: 1.15,
@@ -175,6 +166,8 @@ export interface RummyStats {
   fps: number;
   /** GPU milliseconds per pass, when `profile` is on and the browser supports timer queries. */
   gpu: GpuTimes | null;
+  /** Current exposure multiplier, when `profile` is on (read back each frame, so profiling only). */
+  exposure: number | null;
 }
 
 const isSource = (s: SceneInput): s is TexImageSource => typeof s !== 'string';
@@ -226,7 +219,7 @@ export class Rummy {
   static stillOf = stillOf;
 
   readonly canvas: HTMLCanvasElement;
-  readonly stats: RummyStats = { columns: 0, rows: 0, samples: 0, width: 0, height: 0, fps: 0, gpu: null };
+  readonly stats: RummyStats = { columns: 0, rows: 0, samples: 0, width: 0, height: 0, fps: 0, gpu: null, exposure: null };
 
   private opts: RummyOptions;
   private gl: WebGL2RenderingContext;
@@ -248,6 +241,8 @@ export class Rummy {
   private paletteLab = new Float32Array(32 * 3);
   private paletteRgb = new Float32Array(32 * 3);
   private paletteSize = 0;
+  /** Typical distance between neighbouring palette colours: the dither's reach. */
+  private paletteSpread = 0;
 
   private dpr = 1;
   private raf = 0;
@@ -385,6 +380,30 @@ export class Rummy {
     this.draw();
   }
 
+  /**
+   * The last rendered frame as text: one line per row, top first, including
+   * the partly visible bottom row. Reads back the glyph grid (a few thousand
+   * cells, not the canvas), so it is cheap enough to call on demand.
+   */
+  toText(): string {
+    if (this.lost || this.destroyed || !this.glyphTarget || !this.atlas) return '';
+    const gl = this.gl;
+    const { width, height, fb } = this.glyphTarget;
+    const px = new Uint8Array(width * height * 4);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+    gl.readBuffer(gl.COLOR_ATTACHMENT0);
+    gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, px);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    const { chars } = this.atlas;
+    const lines: string[] = [];
+    for (let y = height - 1; y >= 0; y--) {
+      let line = '';
+      for (let x = 0; x < width; x++) line += chars[px[(y * width + x) * 4]] ?? ' ';
+      lines.push(line);
+    }
+    return lines.join('\n');
+  }
+
   destroy(): void {
     this.destroyed = true;
     cancelAnimationFrame(this.raf);
@@ -487,11 +506,18 @@ export class Rummy {
   private buildPalette(): void {
     const colors = (this.opts.palette ?? []).slice(0, 32);
     this.paletteSize = colors.length;
-    colors.forEach((css, i) => {
-      const rgb = parseColor(css).slice(0, 3);
+    const rgbs = colors.map((css) => parseColor(css).slice(0, 3));
+    rgbs.forEach((rgb, i) => {
       this.paletteRgb.set(rgb, i * 3);
       this.paletteLab.set(oklab(rgb), i * 3);
     });
+    // Ordered dither only bridges two colours if it can reach from one to the
+    // other, so its amplitude follows the palette's spacing: the mean distance
+    // from each colour to its nearest neighbour, per channel.
+    const nearest = rgbs.map((a, i) =>
+      Math.min(...rgbs.filter((_, j) => j !== i).map((b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) / Math.sqrt(3))),
+    );
+    this.paletteSpread = nearest.length > 1 ? nearest.reduce((x, y) => x + y, 0) / nearest.length : 0;
   }
 
   private fontSpec(): FontSpec {
@@ -745,6 +771,13 @@ export class Rummy {
       gl.uniform1f(ep.u.uRate, this.exposureFresh || !this.moving ? 1 : 1 - Math.exp(-this.dt / 0.5));
       gl.drawArrays(gl.TRIANGLES, 0, 3);
       this.exposureFresh = false;
+      if (o.profile) {
+        const px = new Uint8Array(4);
+        gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+        this.stats.exposure = 2 ** ((px[0] / 255) * 3 - 1);
+      }
+    } else {
+      this.stats.exposure = null;
     }
 
     // 3. One glyph, glyph colour and background per cell.
@@ -765,6 +798,7 @@ export class Rummy {
     gl.uniform1f(gp.u.uEdges, o.edges);
     gl.uniform1f(gp.u.uEdgeThreshold, o.edgeThreshold);
     gl.uniform1f(gp.u.uCellAspect, atlas.cellHeight / atlas.cellWidth);
+    gl.uniform1f(gp.u.uStrokeInk, atlas.strokeInk);
     const fg = parseColor(o.fg);
     const bg = parseColor(o.bg);
     gl.uniform3f(gp.u.uFg, fg[0], fg[1], fg[2]);
@@ -776,7 +810,7 @@ export class Rummy {
       gl.uniform3fv(gp.u.uPalette, this.paletteLab);
       gl.uniform3fv(gp.u.uPaletteRgb, this.paletteRgb);
     }
-    gl.uniform1f(gp.u.uDither, o.dither);
+    gl.uniform1f(gp.u.uDither, o.dither * this.paletteSpread);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     timer?.mark('glyph');
 

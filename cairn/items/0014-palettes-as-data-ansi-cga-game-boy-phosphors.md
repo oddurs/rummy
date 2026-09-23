@@ -2,12 +2,12 @@
 id: 14
 title: 'Palettes as data: ANSI, CGA, Game Boy, phosphors'
 type: look
-status: review
+status: shipped
 milestone: v0.2
 depends_on:
 - 7
 created: 2026-09-22
-updated: 2026-09-22
+updated: 2026-09-23
 priority: p2
 pillar: look
 area: engine
@@ -41,9 +41,9 @@ must not band.
 
 ## Acceptance criteria
 
-- [ ] Before/after screenshots attached to the PR
+- [x] Before/after screenshots attached to the PR
 - [x] Palettes exported and documented
-- [ ] Dithered gradients show no visible banding at 12px
+- [x] Dithered gradients show no visible banding at 12px
 
 ## Built in 0.2
 
@@ -60,3 +60,19 @@ brightness before quantizing, because the glyph already carries the tone.
 
 Not verified: banding on a smooth gradient at 12px (criterion 3). The sheet has
 terrain's sky in CGA at 10px, but nobody has looked specifically for banding.
+
+## Closed out in PR #4
+
+The test for criterion 3 found real banding. `gradient-ega-no-dither` splits a
+smooth ramp into four hard bands, and `dither: 0.6` barely softened them. The
+dither amplitude was a fixed ±0.075, while EGA's colours sit about 0.33 apart, so
+ordered dithering couldn't reach across a step.
+
+The amplitude now follows the palette: the mean distance from each colour to its
+nearest neighbour. `dither` defaults to 1 (full ordered dither). With it, every
+hard band edge in the gradient becomes an interleaved transition. What remains
+visible is the Bayer pattern itself, at cell size, which is the look
+rather than banding.
+
+Before/after: `gradient-scene` (reference), `gradient-ega-no-dither`,
+`gradient-ega-dither`, plus the `cga` look throughout.

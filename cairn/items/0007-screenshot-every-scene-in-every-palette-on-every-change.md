@@ -2,10 +2,10 @@
 id: 7
 title: Screenshot every scene in every palette on every change
 type: feature
-status: review
+status: shipped
 milestone: v0.2
 created: 2026-09-22
-updated: 2026-09-22
+updated: 2026-09-23
 priority: p0
 pillar: craft
 area: infra
@@ -72,3 +72,7 @@ Criterion 3 stays open until the job has run on a real pull request.
 ## First CI run
 
 PR #1: the shots job rendered all 54 shots on ubuntu-latest in 30.6 s, wrote the summary and uploaded the sheet as the `shots` artifact. The base (main) had no contact sheet yet, so the base-vs-head diff path first runs on the next PR; that path has only been exercised locally (`--compare shots/baseline`).
+
+## Closed out in PR #4
+
+The base-vs-head path ran for the first time on PR #4: base (main) rendered 54 shots and head 67, and 55 of 67 differed, as intended for a PR that changes silhouettes and dithering. Every criterion has now been exercised in CI.

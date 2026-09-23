@@ -2,12 +2,12 @@
 id: 15
 title: Auto-exposure, so scenes and video need no gain tuning
 type: look
-status: review
+status: shipped
 milestone: v0.2
 depends_on:
 - 7
 created: 2026-09-22
-updated: 2026-09-22
+updated: 2026-09-23
 priority: p2
 pillar: look
 area: engine
@@ -40,7 +40,7 @@ built-ins worse than their hand-tuned look.
 
 - [x] Before/after screenshots attached to the PR
 - [x] No GPU→CPU readback
-- [ ] No visible pumping on a steady scene
+- [x] No visible pumping on a steady scene
 
 ## Built in 0.2
 
@@ -62,3 +62,11 @@ frame has a steady target, but it wants a look at a real video.
 ## Before/after
 
 Side-by-side is in PR #1's `shots` artifact (the with/without comparison shots).
+
+## Closed out in PR #4
+
+Measured with `pnpm measure` (in CI too), on a live canvas source with exposure
+read back each frame (`stats.exposure` in profile mode):
+- **Steady dark frame, 60 frames:** exposure 2.887, relative sd **0.00%**. No pumping.
+- **Cut to bright:** 2.79 → 0.95, within 5% after 61 frames (1.16 s), **no
+  overshoot**.

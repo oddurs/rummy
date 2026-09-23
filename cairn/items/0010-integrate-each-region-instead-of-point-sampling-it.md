@@ -2,13 +2,13 @@
 id: 10
 title: Integrate each region instead of point-sampling it
 type: look
-status: review
+status: shipped
 milestone: v0.2
 depends_on:
 - 7
 - 8
 created: 2026-09-22
-updated: 2026-09-22
+updated: 2026-09-23
 priority: p1
 pillar: look
 area: engine
@@ -76,3 +76,7 @@ someone should look at it moving in a real browser.
 ## Before/after
 
 Side-by-side is in PR #1's `shots` artifact (the with/without comparison shots).
+
+## Closed out in PR #4
+
+All criteria met. One observation outside them: ghosting from the history on fast motion hasn't been watched in a real browser. It is bounded (about 50 ms at 60 fps with the default) and would show up as a trail, not a glitch.

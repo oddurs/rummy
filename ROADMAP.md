@@ -49,26 +49,26 @@ The roadmap lives in `cairn/items/` as Markdown, one file per item, managed with
 
 ## v0.2 — Stunning stills
 
-`#·········` 9% · 1 of 11 done · due 2026-10-20
+`#########·` 82% · 9 of 11 done · due 2026-10-20
 
 Every built-in scene, in every palette, makes a screenshot someone would stop scrolling for. Image quality first: glyph choice, tone, colour, glow, and a harness that lets us see all of it at once. Nothing new ships until the stills are right, because every later feature is judged through them.
 
-### in review
+### blocked
 
-- [ ] [`0007`](https://github.com/oddurs/rummy/blob/main/cairn/items/0007-screenshot-every-scene-in-every-palette-on-every-change.md) Screenshot every scene in every palette on every change <sup>feature · p0 · craft</sup>
 - [ ] [`0008`](https://github.com/oddurs/rummy/blob/main/cairn/items/0008-measure-gpu-time-per-pass-and-put-it-in-stats.md) Measure GPU time per pass and put it in stats <sup>perf · p0 · speed</sup>
-- [ ] [`0010`](https://github.com/oddurs/rummy/blob/main/cairn/items/0010-integrate-each-region-instead-of-point-sampling-it.md) Integrate each region instead of point-sampling it <sup>look · p1 · look</sup>
-- [ ] [`0011`](https://github.com/oddurs/rummy/blob/main/cairn/items/0011-give-silhouettes-direction-not-just-a-near-far-split.md) Give silhouettes direction, not just a near/far split <sup>look · p1 · look</sup>
-- [ ] [`0012`](https://github.com/oddurs/rummy/blob/main/cairn/items/0012-two-tone-cells-a-background-colour-per-cell.md) Two-tone cells: a background colour per cell <sup>look · p1 · look</sup>
-- [ ] [`0013`](https://github.com/oddurs/rummy/blob/main/cairn/items/0013-glow-that-costs-nothing-bloom-at-cell-resolution.md) Glow that costs nothing: bloom at cell resolution <sup>look · p1 · look</sup>
-- [ ] [`0014`](https://github.com/oddurs/rummy/blob/main/cairn/items/0014-palettes-as-data-ansi-cga-game-boy-phosphors.md) Palettes as data: ANSI, CGA, Game Boy, phosphors <sup>look · p2 · look</sup>
-- [ ] [`0015`](https://github.com/oddurs/rummy/blob/main/cairn/items/0015-auto-exposure-so-scenes-and-video-need-no-gain-tuning.md) Auto-exposure, so scenes and video need no gain tuning <sup>look · p2 · look</sup>
 - [ ] [`0016`](https://github.com/oddurs/rummy/blob/main/cairn/items/0016-art-direct-the-five-built-in-scenes.md) Art-direct the five built-in scenes <sup>look · p0 · look</sup>
-- [ ] [`0017`](https://github.com/oddurs/rummy/blob/main/cairn/items/0017-an-opt-in-crt-curvature-vignette-mask-chromatic-fringe.md) An opt-in CRT: curvature, vignette, mask, chromatic fringe <sup>look · p2 · look</sup>
 
 ### shipped
 
+- [x] [`0007`](https://github.com/oddurs/rummy/blob/main/cairn/items/0007-screenshot-every-scene-in-every-palette-on-every-change.md) Screenshot every scene in every palette on every change <sup>feature · p0 · craft</sup>
 - [x] [`0009`](https://github.com/oddurs/rummy/blob/main/cairn/items/0009-minify-the-library-bundle-and-hold-a-size-budget-in-ci.md) Minify the library bundle and hold a size budget in CI <sup>perf · p1 · speed</sup>
+- [x] [`0010`](https://github.com/oddurs/rummy/blob/main/cairn/items/0010-integrate-each-region-instead-of-point-sampling-it.md) Integrate each region instead of point-sampling it <sup>look · p1 · look</sup>
+- [x] [`0011`](https://github.com/oddurs/rummy/blob/main/cairn/items/0011-give-silhouettes-direction-not-just-a-near-far-split.md) Give silhouettes direction, not just a near/far split <sup>look · p1 · look</sup>
+- [x] [`0012`](https://github.com/oddurs/rummy/blob/main/cairn/items/0012-two-tone-cells-a-background-colour-per-cell.md) Two-tone cells: a background colour per cell <sup>look · p1 · look</sup>
+- [x] [`0013`](https://github.com/oddurs/rummy/blob/main/cairn/items/0013-glow-that-costs-nothing-bloom-at-cell-resolution.md) Glow that costs nothing: bloom at cell resolution <sup>look · p1 · look</sup>
+- [x] [`0014`](https://github.com/oddurs/rummy/blob/main/cairn/items/0014-palettes-as-data-ansi-cga-game-boy-phosphors.md) Palettes as data: ANSI, CGA, Game Boy, phosphors <sup>look · p2 · look</sup>
+- [x] [`0015`](https://github.com/oddurs/rummy/blob/main/cairn/items/0015-auto-exposure-so-scenes-and-video-need-no-gain-tuning.md) Auto-exposure, so scenes and video need no gain tuning <sup>look · p2 · look</sup>
+- [x] [`0017`](https://github.com/oddurs/rummy/blob/main/cairn/items/0017-an-opt-in-crt-curvature-vignette-mask-chromatic-fringe.md) An opt-in CRT: curvature, vignette, mask, chromatic fringe <sup>look · p2 · look</sup>
 
 ## later — Later
 
@@ -88,7 +88,7 @@ Good ideas with no date. Pulled into a release when they earn it.
 
 ## v0.3 — Alive
 
-`··········` 0% · 0 of 9 done · due 2026-11-17
+`##········` 11% · 1 of 9 done · due 2026-11-17
 
 Motion that looks intentional. No glyph boil, transitions between scenes, scroll and pointer that feel physical, and an intro that earns the first second on the page.
 
@@ -106,9 +106,9 @@ Motion that looks intentional. No glyph boil, transitions between scenes, scroll
 - [ ] [`0018`](https://github.com/oddurs/rummy/blob/main/cairn/items/0018-stop-glyph-boil-with-temporal-hysteresis.md) Stop glyph boil with temporal hysteresis <sup>look · p0 · motion</sup>
 - [ ] [`0020`](https://github.com/oddurs/rummy/blob/main/cairn/items/0020-custom-uniforms-settable-live.md) Custom uniforms, settable live <sup>feature · p0 · content</sup>
 
-### in review
+### shipped
 
-- [ ] [`0053`](https://github.com/oddurs/rummy/blob/main/cairn/items/0053-a-sveltekit-website-with-a-server-on-port-4499.md) A SvelteKit website with a server, on port 4499 <sup>feature · p1 · launch</sup>
+- [x] [`0053`](https://github.com/oddurs/rummy/blob/main/cairn/items/0053-a-sveltekit-website-with-a-server-on-port-4499.md) A SvelteKit website with a server, on port 4499 <sup>feature · p1 · launch</sup>
 
 ## v0.4 — Your world
 

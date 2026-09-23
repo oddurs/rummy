@@ -50,7 +50,8 @@
     "web": "pnpm --filter rummy-web dev",
     "web:build": "pnpm --filter rummy-web build",
     "web:start": "pnpm --filter rummy-web start",
-    "web:check": "pnpm --filter rummy-web check"
+    "web:check": "pnpm --filter rummy-web check",
+    "measure": "pnpm build:demo && node scripts/measure.mjs"
   },
   "devDependencies": {
     "typescript": "^7.0.2",
