@@ -21,7 +21,9 @@ export function minifyGlsl(source: string): string {
       // Binary + and -, unless joining them to a neighbouring sign would
       // create ++, -- or a sign pair that reads differently.
       .replace(/([^+\-\s]) ([+-]) (?=[^+\-\s])/g, '$1$2');
-    out += out && !out.endsWith('\n') ? ` ${tight}` : tight;
+    // Joining lines needs a space only between two identifier characters.
+    const glue = out && !out.endsWith('\n') && /[\w.]$/.test(out) && /^[\w.]/.test(tight) ? ' ' : '';
+    out += glue + tight;
   }
   return out;
 }
