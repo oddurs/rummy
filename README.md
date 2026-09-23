@@ -39,9 +39,10 @@ computed at cell resolution so it stays nearly free:
 
 - **Silhouettes with direction.** Depth edges become a stroke along the edge's actual
   angle and position, so outlines draw as `/ \ | _` instead of blotches.
-- **Temporal anti-aliasing.** Each frame samples a jittered point inside every region
-  and folds it into a history; thin lines stop crawling, and still frames refine to
-  the quality of 4× supersampling.
+- **Temporal anti-aliasing for stills.** A still frame samples jittered points in every
+  region over 16 frames and converges to the quality of 4× supersampling. In motion
+  there is no jitter: it made sub-cell detail flip between glyphs every frame. Motion
+  keeps a light history instead, and measures under 0.25% flicker in every scene.
 - **Phosphor glow**, blurred over the cell grid rather than millions of pixels.
 - **Two-tone cells**: a background colour per cell, like a real terminal.
 - **Palettes** (ANSI, CGA, EGA, C64, Game Boy, phosphors) with ordered dithering.
@@ -138,7 +139,7 @@ All options are optional and can be changed later with `rummy.set()`.
 | `contrast` | `1.6` | Sharpens shape inside a cell (1 = off) |
 | `directionalContrast` | `2` | Sharpens against neighbouring cells (1 = off) |
 | `edges` | `0.6` | Directional silhouette strength, 0..1 |
-| `antialias` | `0.6` | Temporal anti-aliasing, 0..1 (0 = one point sample per region) |
+| `antialias` | `0.6` | Stills refine over 16 jittered frames; in motion, how much of the last frame to keep (0 = point samples) |
 | `quality` | `1` | `2` supersamples each region 2×2 (4× scene cost) |
 | `glow` / `glowRadius` | `0` / `2.5` | Phosphor glow strength, and its radius in cells |
 | `crt` | `false` | `true` for a preset, or `{ curvature, vignette, mask, fringe, flicker }` |
@@ -152,7 +153,9 @@ All options are optional and can be changed later with `rummy.set()`.
 | `respectReducedMotion` | `true` | Hold the scene's still frame under `prefers-reduced-motion` |
 | `profile` | `false` | Measure GPU time per pass into `stats.gpu`, and exposure into `stats.exposure` |
 
-Methods: `set(options)`, `play()`, `pause()`, `render()`, `resize()`, `toText()`, `destroy()`.
+Methods: `set(options)`, `play()`, `pause()`, `render()`, `step(seconds)`, `resize()`, `toText()`, `destroy()`.
+`step()` advances time and renders one frame exactly as the running loop would, for
+recording and deterministic tests.
 `toText()` returns the last frame as text, one line per row. It reads back the glyph
 grid, not the canvas, so it is cheap: paste a frame into a terminal or a code block.
 Properties: `time` (get/set, seconds), `stats` (`columns`, `rows`, `samples`, `width`,
@@ -209,7 +212,7 @@ pnpm dev          # demo at http://localhost:5173 (/shots.html, /bench.html too)
 pnpm check        # typecheck, library build, size gate, demo build
 pnpm shots        # render the contact sheet to shots/current, diff against shots/baseline
 pnpm bench        # GPU time per pass on this machine's real GPU
-pnpm measure      # silhouette and auto-exposure checks (also run in CI)
+pnpm measure      # silhouettes, motion flicker, auto-exposure (also run in CI)
 pnpm web          # the website (SvelteKit) on http://localhost:4499
 ```
 

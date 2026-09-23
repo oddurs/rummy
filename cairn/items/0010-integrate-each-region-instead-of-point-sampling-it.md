@@ -80,3 +80,7 @@ Side-by-side is in PR #1's `shots` artifact (the with/without comparison shots).
 ## Closed out in PR #4
 
 All criteria met. One observation outside them: ghosting from the history on fast motion hasn't been watched in a real browser. It is bounded (about 50 ms at 60 fps with the default) and would show up as a trail, not a glitch.
+
+## Revisited in 0018
+
+The jitter this item added for motion turned out to be the main cause of glyph boil. Motion no longer jitters; stills still do, and look exactly as before. The measurements are in 0018.

@@ -20,13 +20,21 @@ the built-in scenes can afford 64–90 raymarch steps and multi-octave noise and
 cost well under a millisecond on a laptop GPU.
 
 **Temporal anti-aliasing.** One point sample per region aliases: a line thinner than a
-region either hits the sample or vanishes, so it flickers in motion and breaks into
-dashes when still. Instead, each frame samples at a jittered position inside the region
-(an R2 low-discrepancy sequence) and blends into the previous frame's result
-(ping-ponged targets). In motion the blend is exponential (`antialias` sets how much
-history to keep). When the scene is still, the blend becomes a uniform average over 16
-frames, so a still converges to the quality of heavy supersampling for the cost of
-rendering it 16 times, once. `quality: 2` remains for brute-force 2×2 supersampling.
+region either hits the sample or vanishes. A still frame therefore samples at jittered
+positions (an R2 low-discrepancy sequence) and averages 16 of them, which converges to
+the quality of heavy supersampling for the cost of rendering it 16 times, once.
+`quality: 2` remains for brute-force 2×2 supersampling.
+
+In motion there is no jitter. The first version jittered in motion too, blending each
+frame into an exponential history. Measuring glyph flicker (`pnpm measure`: cells that
+flip and flip back within three frames) showed that jitter was the main source of
+"boil". A sub-cell feature near a region boundary landed on alternate sides as the
+sample moved, so glyphs like `.` and `` ` `` traded places every frame: 1–4% of cells
+per frame, and frames further from the ideal than plain point sampling. Without jitter
+in motion, flicker is 0.02–0.24%. A light history (`antialias` sets how much) halves
+the flicker that remains in fast scenes while costing about one point of accuracy.
+Glyph hysteresis was tried as well and removed: once the jitter was gone it no longer
+reduced flicker, and it only added lag.
 
 ### 2. Exposure (only when adaptive)
 
