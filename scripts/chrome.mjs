@@ -106,6 +106,12 @@ export async function launch(url, { gpu = false, width = 1200, height = 900 } = 
       const d = msg.params.exceptionDetails;
       errors.push(d.exception?.description ?? d.text);
     }
+    // Browser-level errors (CSP violations, failed loads) arrive as log entries.
+    // The browser's own favicon probe isn't the page's fault.
+    if (msg.method === 'Log.entryAdded' && msg.params.entry.level === 'error') {
+      const { text, url = '' } = msg.params.entry;
+      if (!url.endsWith('/favicon.ico')) errors.push(url ? `${text} (${url})` : text);
+    }
     if (msg.method === 'Runtime.consoleAPICalled' && msg.params.type === 'error') {
       errors.push(msg.params.args.map((a) => a.value ?? a.description).join(' '));
     }
@@ -122,6 +128,7 @@ export async function launch(url, { gpu = false, width = 1200, height = 900 } = 
   const page = (method, params) => send(method, params, sessionId);
   await page('Runtime.enable');
   await page('Page.enable');
+  await page('Log.enable');
   await page('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: false });
   await page('Page.navigate', { url });
 
@@ -149,9 +156,17 @@ export async function launch(url, { gpu = false, width = 1200, height = 900 } = 
     rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   }
 
-  /** PNG of the viewport, as a Buffer. */
-  async function screenshot() {
-    const { data } = await page('Page.captureScreenshot', { format: 'png' });
+  /** PNG of the viewport (or the whole page), as a Buffer. */
+  async function screenshot({ fullPage = false } = {}) {
+    const params = { format: 'png' };
+    if (fullPage) {
+      const { cssContentSize: size } = await page('Page.getLayoutMetrics');
+      Object.assign(params, {
+        captureBeyondViewport: true,
+        clip: { x: 0, y: 0, width: size.width, height: size.height, scale: 1 },
+      });
+    }
+    const { data } = await page('Page.captureScreenshot', params);
     return Buffer.from(data, 'base64');
   }
 

@@ -24,6 +24,20 @@ jobs:
       # typecheck, library build, bundle-size gate, demo build
       - run: pnpm check
 
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # svelte-check (warnings fail), then the production build
+      - run: pnpm web:check
+      - run: pnpm web:build
+
   roadmap:
     runs-on: ubuntu-latest
     steps:

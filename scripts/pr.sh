@@ -28,6 +28,9 @@ fi
 
 if [ "$check" = 1 ]; then
   pnpm check
+  # The site compiles against the library's source, so check it when either moved.
+  git fetch -q origin main
+  if ! git diff --quiet origin/main...HEAD -- web src demo; then pnpm web:check; fi
   if command -v cairn >/dev/null; then cairn check -q && cairn render --check; fi
 fi
 
