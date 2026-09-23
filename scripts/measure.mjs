@@ -6,6 +6,7 @@
  *   motion       no boil (A→B→A flicker) and no lag against point sampling
  *   uniforms     custom uniforms apply live, merge, and never recompile
  *   scroll       uScroll tracks the page with one layout read per frame
+ *   transitions  resolve, end on the live frame, and don't jump when interrupted
  *   exposure     auto-exposure holds still on a steady source and settles
  *                after a cut without overshooting
  *
@@ -83,6 +84,22 @@ check(Math.abs(sc.tracked - 0.5) < 0.06, 'uScroll follows the page (half scrolle
 check(Math.abs(sc.pinned - 0.25) < 0.06, 'a number pins uScroll');
 check(sc.readsPerFrame <= 1.01, 'at most one layout read per frame');
 check(sc.readsWhilePaused === 0, 'no layout reads while paused');
+
+// --- transitions -----------------------------------------------------------------------
+const tr = await chrome.evaluate('window.__shots.transitionCheck()');
+const p100 = (v) => `${(v * 100).toFixed(0)}%`;
+console.log(
+  `\ntransitions: halfway ${p100(tr.halfway.from)} old / ${p100(tr.halfway.to)} new / ${p100(tr.halfway.scramble)} scramble; interrupt changes ${p100(tr.interruptJump)} of cells; paused run finished in ${tr.pausedFinishedMs.toFixed(0)} ms`,
+);
+check(tr.resolved, 'transition() resolves');
+check(tr.endsLive, 'a finished transition shows the live frame');
+check(tr.halfway.from > 0.1 && tr.halfway.to > 0.1 && tr.halfway.scramble > 0.02, 'halfway shows old, new and scrambling cells');
+check(tr.interruptJump < 0.15, 'interrupting continues from what is on screen (no jump)');
+check(tr.pausedFinishedMs < 1500, 'a paused renderer still runs a transition to the end');
+await chrome.emulateMedia({ 'prefers-reduced-motion': 'reduce' });
+const rt = await chrome.evaluate('window.__shots.reducedTransitionCheck()');
+await chrome.emulateMedia({ 'prefers-reduced-motion': 'no-preference' });
+check(rt.reduced && rt.scramble === 0, `under reduced motion a transition dissolves with no scramble (${(rt.scramble * 100).toFixed(1)}% scrambled cells)`);
 
 // --- exposure --------------------------------------------------------------------
 const exp = await chrome.evaluate('window.__shots.exposure()');

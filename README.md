@@ -76,6 +76,18 @@ rummy.set({ edges: 0.8 }); // change anything live
 rummy.destroy();           // clean up on unmount
 ```
 
+### Change scenes with a transition
+
+```ts
+await rummy.transition({ scene: scenes.globe }, { style: 'rain', duration: 900 });
+```
+
+`decode` resolves cells in random order through a scramble of random glyphs, `wipe`
+sweeps a scrambling edge across, and `rain` drops each column from the top. Calling it
+mid-transition continues from what is on screen. Under reduced motion it is a short
+dissolve. Transitions run at cell resolution against a held copy of the outgoing
+frame, so they cost almost nothing.
+
 ### Asciify a video, image or canvas
 
 ```ts
@@ -175,7 +187,8 @@ All options are optional and can be changed later with `rummy.set()`.
 | `uniforms` | `{}` | Values for the scene's own uniforms; `set({ uniforms })` merges |
 | `profile` | `false` | Measure GPU time per pass into `stats.gpu`, and exposure into `stats.exposure` |
 
-Methods: `set(options)`, `play()`, `pause()`, `render()`, `step(seconds)`, `resize()`, `toText()`, `destroy()`.
+Methods: `set(options)`, `transition(options, { style, duration })`, `play()`, `pause()`,
+`render()`, `step(seconds)`, `resize()`, `toText()`, `destroy()`.
 `step()` advances time and renders one frame exactly as the running loop would, for
 recording and deterministic tests.
 `toText()` returns the last frame as text, one line per row. It reads back the glyph

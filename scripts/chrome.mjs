@@ -170,5 +170,12 @@ export async function launch(url, { gpu = false, width = 1200, height = 900 } = 
     return Buffer.from(data, 'base64');
   }
 
-  return { evaluate, waitFor, screenshot, close, errors };
+  /** Emulate CSS media features, e.g. { 'prefers-reduced-motion': 'reduce' }. */
+  async function emulateMedia(features) {
+    await page('Emulation.setEmulatedMedia', {
+      features: Object.entries(features).map(([name, value]) => ({ name, value })),
+    });
+  }
+
+  return { evaluate, waitFor, screenshot, emulateMedia, close, errors };
 }

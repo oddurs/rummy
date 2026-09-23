@@ -1,6 +1,6 @@
 export { Rummy, defaults } from './rummy';
 export { charsets } from './charsets';
-export type { RummyOptions, RummyStats, SceneInput, UniformValue } from './rummy';
+export type { RummyOptions, RummyStats, SceneInput, TransitionOptions, TransitionStyle, UniformValue } from './rummy';
 export { scenes, ring, terrain, blobs, globe, tunnel } from './scenes';
 export type { SceneName } from './scenes';
 export { palettes } from './palettes';

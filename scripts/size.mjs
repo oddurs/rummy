@@ -13,8 +13,9 @@ import { gzipSync } from 'node:zlib';
 import { build } from 'vite';
 
 // Raised deliberately, never silently. History in cairn item 0009:
-// 0.2 set 15 / 12.5 KB; 0.3 raised to 15.5 / 13 KB for custom uniforms.
-const BUDGET = { library: 15.5 * 1024, core: 13 * 1024 };
+// 0.2 set 15 / 12.5 KB; 0.3 raised to 15.5 / 13 KB for custom uniforms, then
+// 16.5 / 14 KB for transitions after identifier mangling measured only 0.17 KB.
+const BUDGET = { library: 16.5 * 1024, core: 14 * 1024 };
 
 const gz = (s) => gzipSync(s, { level: 9 }).length;
 const kb = (n) => `${(n / 1024).toFixed(2)} KB`;

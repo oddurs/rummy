@@ -72,7 +72,7 @@ Every built-in scene, in every palette, makes a screenshot someone would stop sc
 
 ## later — Later
 
-`··········` 0% · 0 of 7 done
+`··········` 0% · 0 of 6 done
 
 Good ideas with no date. Pulled into a release when they earn it.
 
@@ -83,7 +83,6 @@ Good ideas with no date. Pulled into a release when they earn it.
 - [ ] [`0048`](https://github.com/oddurs/rummy/blob/main/cairn/items/0048-is-a-webgpu-backend-worth-it.md) Is a WebGPU backend worth it? <sup>spike · p3 · speed</sup>
 - [ ] [`0049`](https://github.com/oddurs/rummy/blob/main/cairn/items/0049-weight-as-tone-bold-and-light-atlases-chosen-by-brightness.md) Weight as tone: bold and light atlases chosen by brightness <sup>look · p3 · look</sup>
 - [ ] [`0050`](https://github.com/oddurs/rummy/blob/main/cairn/items/0050-the-headline-as-geometry-sdf-text-inside-the-scene.md) The headline as geometry: SDF text inside the scene <sup>feature · p3 · content</sup>
-- [ ] [`0051`](https://github.com/oddurs/rummy/blob/main/cairn/items/0051-screen-reader-text-mode-for-small-grids.md) Screen-reader text mode for small grids <sup>feature · p3 · reach</sup>
 - [ ] [`0052`](https://github.com/oddurs/rummy/blob/main/cairn/items/0052-mangle-glsl-identifiers-in-the-build.md) Mangle GLSL identifiers in the build <sup>perf · p3 · speed</sup>
 
 ## v0.3 — Alive
@@ -95,7 +94,6 @@ Motion that looks intentional. No glyph boil, transitions between scenes, scroll
 ### idea
 
 - [ ] [`0019`](https://github.com/oddurs/rummy/blob/main/cairn/items/0019-phosphor-persistence-trails-that-decay-at-cell-resolution.md) Phosphor persistence: trails that decay at cell resolution <sup>look · p2 · motion</sup>
-- [ ] [`0022`](https://github.com/oddurs/rummy/blob/main/cairn/items/0022-transitions-between-scenes-decode-wipe-rain.md) Transitions between scenes: decode, wipe, rain <sup>feature · p1 · motion</sup>
 - [ ] [`0023`](https://github.com/oddurs/rummy/blob/main/cairn/items/0023-pointer-as-a-force-ripples-lens-shockwave.md) Pointer as a force: ripples, lens, shockwave <sup>feature · p2 · motion</sup>
 - [ ] [`0024`](https://github.com/oddurs/rummy/blob/main/cairn/items/0024-an-intro-worth-the-first-second-type-on-reveal.md) An intro worth the first second: type-on reveal <sup>feature · p2 · motion</sup>
 - [ ] [`0025`](https://github.com/oddurs/rummy/blob/main/cairn/items/0025-frame-time-governor-shed-detail-before-dropping-frames.md) Frame-time governor: shed detail before dropping frames <sup>perf · p1 · speed</sup>
@@ -103,6 +101,7 @@ Motion that looks intentional. No glyph boil, transitions between scenes, scroll
 ### in review
 
 - [ ] [`0018`](https://github.com/oddurs/rummy/blob/main/cairn/items/0018-stop-glyph-boil-with-temporal-hysteresis.md) Stop glyph boil with temporal hysteresis <sup>look · p0 · motion</sup>
+- [ ] [`0022`](https://github.com/oddurs/rummy/blob/main/cairn/items/0022-transitions-between-scenes-decode-wipe-rain.md) Transitions between scenes: decode, wipe, rain <sup>feature · p1 · motion</sup>
 
 ### shipped
 
