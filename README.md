@@ -108,6 +108,25 @@ Available in scenes: `uTime`, `uMouse` (−1..1, smoothed), `uAspect`, `uResolut
 (2D and 3D). Depth only matters for the `edges` silhouette effect; return a constant if
 you don't care.
 
+Scenes can declare their own uniforms and have them set live, with no recompile.
+Numbers become `float`, booleans `bool`, 2–4 numbers `vec2`–`vec4`, and an image,
+video or canvas a `sampler2D` (sample it with `texture(uLogo, uv)`):
+
+```ts
+const orb = /* glsl */ `
+uniform vec3 uTint;
+uniform float uSize;
+vec4 scene(vec2 uv) {
+  float d = length(screen(uv));
+  return vec4(uTint * smoothstep(uSize, uSize - 0.02, d), d);
+}`;
+
+const rummy = new Rummy(canvas, { scene: orb, uniforms: { uTint: [1, 0.5, 0.2], uSize: 0.6 } });
+rummy.set({ uniforms: { uSize: 0.4 } }); // merges; uTint keeps its value
+```
+
+An unknown uniform name logs one warning and is otherwise ignored.
+
 A scene can declare its best moment with `#define STILL 4.0` at the top. rummy starts
 there, and it's the frame shown to visitors who prefer reduced motion.
 
@@ -151,6 +170,7 @@ All options are optional and can be changed later with `rummy.set()`.
 | `mouse` | `true` | Feed the pointer to `uMouse` |
 | `pauseOffscreen` | `true` | Stop when scrolled out of view |
 | `respectReducedMotion` | `true` | Hold the scene's still frame under `prefers-reduced-motion` |
+| `uniforms` | `{}` | Values for the scene's own uniforms; `set({ uniforms })` merges |
 | `profile` | `false` | Measure GPU time per pass into `stats.gpu`, and exposure into `stats.exposure` |
 
 Methods: `set(options)`, `play()`, `pause()`, `render()`, `step(seconds)`, `resize()`, `toText()`, `destroy()`.

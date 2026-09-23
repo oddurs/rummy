@@ -5,7 +5,7 @@ type: perf
 status: shipped
 milestone: v0.2
 created: 2026-09-22
-updated: 2026-09-22
+updated: 2026-09-23
 priority: p1
 pillar: speed
 area: infra
@@ -64,3 +64,7 @@ filed as its own item.
 ## After the art pass
 
 Re-measured after the scene rework: library 14.07 KB, core 12.05 KB gzipped (the new scenes add ~0.6 KB of GLSL). Still inside the gates, but the core has under 0.5 KB of headroom, so the next shader feature will hit it. That is the gate doing its job; identifier mangling (the 'Mangle GLSL identifiers' item) is the way to earn room back.
+
+## Budget raised in 0.3
+
+Custom uniforms (0020) put the core 0.03 KB over the 12.5 KB gate, after the GLSL minifier had already been tightened again (no space when joining lines unless both sides are identifier characters; only 0.06 KB, since gzip handles spaces well). Raised to 13 KB core / 15.5 KB library as a recorded decision: a feature, not creep. Identifier mangling (0051) is how to earn it back.

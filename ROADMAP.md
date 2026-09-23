@@ -88,7 +88,7 @@ Good ideas with no date. Pulled into a release when they earn it.
 
 ## v0.3 — Alive
 
-`##········` 11% · 1 of 9 done · due 2026-11-17
+`###·······` 22% · 2 of 9 done · due 2026-11-17
 
 Motion that looks intentional. No glyph boil, transitions between scenes, scroll and pointer that feel physical, and an intro that earns the first second on the page.
 
@@ -101,16 +101,13 @@ Motion that looks intentional. No glyph boil, transitions between scenes, scroll
 - [ ] [`0024`](https://github.com/oddurs/rummy/blob/main/cairn/items/0024-an-intro-worth-the-first-second-type-on-reveal.md) An intro worth the first second: type-on reveal <sup>feature · p2 · motion</sup>
 - [ ] [`0025`](https://github.com/oddurs/rummy/blob/main/cairn/items/0025-frame-time-governor-shed-detail-before-dropping-frames.md) Frame-time governor: shed detail before dropping frames <sup>perf · p1 · speed</sup>
 
-### planned
-
-- [ ] [`0020`](https://github.com/oddurs/rummy/blob/main/cairn/items/0020-custom-uniforms-settable-live.md) Custom uniforms, settable live <sup>feature · p0 · content</sup>
-
 ### in review
 
 - [ ] [`0018`](https://github.com/oddurs/rummy/blob/main/cairn/items/0018-stop-glyph-boil-with-temporal-hysteresis.md) Stop glyph boil with temporal hysteresis <sup>look · p0 · motion</sup>
 
 ### shipped
 
+- [x] [`0020`](https://github.com/oddurs/rummy/blob/main/cairn/items/0020-custom-uniforms-settable-live.md) Custom uniforms, settable live <sup>feature · p0 · content</sup>
 - [x] [`0053`](https://github.com/oddurs/rummy/blob/main/cairn/items/0053-a-sveltekit-website-with-a-server-on-port-4499.md) A SvelteKit website with a server, on port 4499 <sup>feature · p1 · launch</sup>
 
 ## v0.4 — Your world
