@@ -1,9 +1,40 @@
 # Working on rummy
 
-Library in `src/`, demo site in `demo/`, tooling in `scripts/`. Before calling visual
-work done, run `pnpm shots` and look at the sheets in `shots/current/`; for anything
-touching per-frame cost, run `pnpm bench`. `pnpm check` must pass.
+Library in `src/`, demo and test harness in `demo/`, tooling in `scripts/`. The roadmap
+is in `cairn/items/` (see below).
 
+## The loop
+
+Every change goes through a branch and a pull request. Nothing is committed to `main`.
+
+1. **Start:** `pnpm item <id>` fetches `origin/main`, creates a branch named after the
+   cairn item, and claims the item on it. For work with no item, use
+   `git switch -c <slug> origin/main`, or file one with `cairn new` first.
+2. **Work, checking as you go.**
+   - `pnpm check` (~1.5 s): typecheck, library build, size gate, demo build.
+   - Visual change: `pnpm shots` and read `shots/current/sheet-*.png`. To see what
+     you changed, save a baseline on `main` first (`pnpm shots --save-baseline`);
+     later runs diff against it automatically.
+   - Per-frame cost: `pnpm bench` (real GPU, headless).
+3. **Record it on the item:** `cairn tick`, `cairn note` with the evidence (numbers,
+   shot names), then `cairn set <id> status=review` for anything judged by eye, or
+   `status=shipped` when every criterion is verified. The item change ships in the same
+   PR as the code.
+4. **Ship:** commit, then `pnpm pr`. It runs the checks, pushes, opens the PR from your
+   commit messages, and queues it to merge once CI is green. Add `--no-merge` when a
+   person should look first.
+5. **CI:** `check`, `roadmap` (cairn valid, `ROADMAP.md` current) and `shots`
+   (contact sheet; the base-vs-head diff lands in the job summary). All three are
+   required to merge.
+
+Rules:
+- One item per branch.
+- Never force-push, and never push to `main`.
+- Evidence goes in item notes, not only in chat.
+- Commit messages carry no AI attribution trailers.
+
+Parallel agents: each worktree gets its own branch. `dist/`, `site/` and `shots/` are
+per-worktree build output and are safe to regenerate.
 
 <!-- cairn:begin -->
 ## Roadmap and issues
