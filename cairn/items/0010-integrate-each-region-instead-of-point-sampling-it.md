@@ -48,7 +48,7 @@ Options, to be measured rather than argued:
 
 ## Acceptance criteria
 
-- [ ] Before/after screenshots attached to the PR
+- [x] Before/after screenshots attached to the PR
 - [x] Frame cost within `budget`
 - [x] Default quality visibly closer to today's `quality: 2` than today's `quality: 1`
 
@@ -72,3 +72,7 @@ Bench, M4 1080p: antialias 0.6 vs 0 totals are within run-to-run noise (±0.3 ms
 Not yet judged: how much ghosting the history adds on fast motion. It is short
 (about 50 ms at 60 fps with the default) and reads as phosphor persistence, but
 someone should look at it moving in a real browser.
+
+## Before/after
+
+Side-by-side is in PR #1's `shots` artifact (the with/without comparison shots).

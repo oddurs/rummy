@@ -47,7 +47,7 @@ versions picks the new ones.
 
 ## Acceptance criteria
 
-- [ ] Before/after contact sheets attached to the PR
+- [x] Before/after contact sheets attached to the PR
 - [ ] Every scene within `budget`
 - [x] Every scene has a clear focal point at 10px and 16px
 - [x] Reduced-motion still frame chosen deliberately per scene
@@ -79,3 +79,7 @@ there, and it is the reduced-motion frame, so this works for user scenes too.
 
 Budget: every scene totals ≤ 1.73 ms at 1080p **on an M4**. The budget is written
 against an M1, which hasn't been measured, so criterion 2 stays open.
+
+## Before/after
+
+v0.1 vs v0.2 images for ring, terrain and globe are in the PR #1 description; every scene in every look is in its `shots` artifact.

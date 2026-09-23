@@ -38,7 +38,7 @@ built-ins worse than their hand-tuned look.
 
 ## Acceptance criteria
 
-- [ ] Before/after screenshots attached to the PR
+- [x] Before/after screenshots attached to the PR
 - [x] No GPU→CPU readback
 - [ ] No visible pumping on a steady scene
 
@@ -58,3 +58,7 @@ from a few dots to a readable scene. Bench: exposure auto vs fixed within noise.
 
 Not verified: pumping on a steady live source (criterion 3). By construction a steady
 frame has a steady target, but it wants a look at a real video.
+
+## Before/after
+
+Side-by-side is in PR #1's `shots` artifact (the with/without comparison shots).

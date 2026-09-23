@@ -45,7 +45,7 @@ line art, not against today's output.
 
 ## Acceptance criteria
 
-- [ ] Before/after screenshots attached to the PR
+- [x] Before/after screenshots attached to the PR
 - [x] Frame cost within `budget`
 - [ ] Diagonal silhouettes resolve to `/` and `\` more often than to letters
 - [x] Scenes without normals look no worse than today
@@ -71,3 +71,7 @@ scene outputs normals, and the extra render target wasn't worth it before the de
 version was judged. Criterion 3 is left for a human: diagonals come out as `/` and `\`
 often, but corners still pick letters (`J`, `L`, `7`), and "more often than letters"
 wants counting or a careful look, not an assertion from me.
+
+## Before/after
+
+Side-by-side is in PR #1's `shots` artifact (the with/without comparison shots).

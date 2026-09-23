@@ -44,7 +44,7 @@ Nothing at runtime. CI time: roughly a minute with SwiftShader.
 
 - [x] `pnpm shots` renders every scene × palette × mode deterministically
 - [x] Two runs on the same commit produce identical images
-- [ ] CI posts the contact sheet on every PR
+- [x] CI posts the contact sheet on every PR
 - [x] A deliberately broken shader fails CI with the image that broke
 
 ## Built in 0.2
@@ -68,3 +68,7 @@ the scene's `#define STILL` time with no pointer and 17 refinement frames.
   platforms, so goldens would only ever match the machine that made them.
 
 Criterion 3 stays open until the job has run on a real pull request.
+
+## First CI run
+
+PR #1: the shots job rendered all 54 shots on ubuntu-latest in 30.6 s, wrote the summary and uploaded the sheet as the `shots` artifact. The base (main) had no contact sheet yet, so the base-vs-head diff path first runs on the next PR; that path has only been exercised locally (`--compare shots/baseline`).
