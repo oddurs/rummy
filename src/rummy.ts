@@ -16,6 +16,7 @@ import {
   GLOW_FS,
   GLYPH_FS,
   LUMA_FS,
+  MIX_FS,
   SCENE_MAIN,
   SCENE_PRELUDE,
   SOURCE_SCENE,
@@ -32,6 +33,26 @@ export type SceneInput = string | TexImageSource;
  * 2–4 numbers → vec2–vec4, an image/video/canvas → sampler2D.
  */
 export type UniformValue = number | boolean | readonly number[] | TexImageSource;
+
+export type TransitionStyle = 'decode' | 'wipe' | 'rain';
+
+export interface TransitionOptions {
+  /** How cells change over. Default `decode`. */
+  style: TransitionStyle;
+  /** Milliseconds. Default 900. */
+  duration: number;
+}
+
+interface Transition {
+  from: Target;
+  mix: Target;
+  style: number;
+  elapsed: number;
+  duration: number;
+  resolve: () => void;
+}
+
+const STYLES: Record<TransitionStyle | 'dissolve', number> = { decode: 0, wipe: 1, rain: 2, dissolve: 3 };
 
 export interface CrtOptions {
   /** Barrel distortion, 0..1. */
@@ -244,7 +265,10 @@ export class Rummy {
   private opts: RummyOptions;
   private gl: WebGL2RenderingContext;
   private vao: WebGLVertexArrayObject | null = null;
-  private programs: Record<'scene' | 'luma' | 'exposure' | 'glyph' | 'glow' | 'composite', Program> | null = null;
+  private programs: Record<'scene' | 'luma' | 'exposure' | 'glyph' | 'glow' | 'composite' | 'mix', Program> | null = null;
+  private transitionState: Transition | null = null;
+  /** True while transition() applies its own options through set(). */
+  private transitioning = false;
   private sceneTargets: [Target, Target] | null = null;
   private sceneIndex = 0;
   private lumaTarget: Target | null = null;
@@ -358,6 +382,8 @@ export class Rummy {
     const changed = (k: keyof RummyOptions) => k in options && options[k] !== prev[k];
 
     if (this.lost) return;
+    // A plain scene change is a cut: it ends any transition in progress.
+    if (changed('scene') && this.transitionState && !this.transitioning) this.endTransition();
     if (changed('scene')) {
       this.compileScene();
       this.exposureFresh = true;
@@ -387,6 +413,45 @@ export class Rummy {
    */
   resize(): void {
     this.layout();
+  }
+
+  /**
+   * Change options (usually the scene) with an animated handover instead of a
+   * cut. The outgoing frame is held and each cell switches over at its own
+   * moment, through a brief scramble of random glyphs. Resolves when done.
+   * Calling it again mid-transition starts from what is on screen. Under
+   * prefers-reduced-motion it is a short dissolve with no scramble.
+   *
+   *   await rummy.transition({ scene: scenes.globe }, { style: 'rain' });
+   */
+  transition(options: Partial<RummyOptions>, { style = 'decode', duration = 900 }: Partial<TransitionOptions> = {}): Promise<void> {
+    if (this.lost || this.destroyed || !this.glyphTarget) {
+      this.set(options);
+      return Promise.resolve();
+    }
+    const gl = this.gl;
+    const grid = this.glyphTarget;
+    const calm = this.opts.respectReducedMotion && this.reducedMotion;
+    const previous = this.transitionState;
+    // Hold what is on screen now: the live grid, or the current mix.
+    const from = previous?.from ?? createTarget(gl, grid.width, grid.height, { attachments: 2 });
+    const mix = previous?.mix ?? createTarget(gl, grid.width, grid.height, { attachments: 2 });
+    this.copyGrid(previous ? mix : grid, from);
+    previous?.resolve();
+
+    return new Promise((resolve) => {
+      this.transitionState = {
+        from,
+        mix,
+        style: STYLES[calm ? 'dissolve' : style],
+        elapsed: 0,
+        duration: Math.max(1, calm ? Math.min(duration, 250) : duration),
+        resolve,
+      };
+      this.transitioning = true;
+      this.set(options);
+      this.transitioning = false;
+    });
   }
 
   play(): void {
@@ -429,7 +494,7 @@ export class Rummy {
   toText(): string {
     if (this.lost || this.destroyed || !this.glyphTarget || !this.atlas) return '';
     const gl = this.gl;
-    const { width, height, fb } = this.glyphTarget;
+    const { width, height, fb } = this.transitionState?.mix ?? this.glyphTarget;
     const px = new Uint8Array(width * height * 4);
     gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
     gl.readBuffer(gl.COLOR_ATTACHMENT0);
@@ -469,6 +534,7 @@ export class Rummy {
       glyph: createProgram(gl, FULLSCREEN_VS, GLYPH_FS),
       glow: createProgram(gl, FULLSCREEN_VS, GLOW_FS),
       composite: createProgram(gl, FULLSCREEN_VS, COMPOSITE_FS),
+      mix: createProgram(gl, FULLSCREEN_VS, MIX_FS),
     };
     this.prepareSource();
     this.exposureTargets = [createTarget(gl, 1, 1), createTarget(gl, 1, 1)];
@@ -480,6 +546,9 @@ export class Rummy {
 
   private release(): void {
     const gl = this.gl;
+    if (this.transitionState && !gl.isContextLost()) this.endTransition();
+    this.transitionState?.resolve();
+    this.transitionState = null;
     this.timer?.dispose();
     this.timer = null;
     if (gl.isContextLost()) return;
@@ -675,7 +744,7 @@ export class Rummy {
   }
 
   private get moving(): boolean {
-    return this.animating || this.stepping || this.sourceIsLive();
+    return this.animating || this.stepping || this.transitionState !== null || this.sourceIsLive();
   }
 
   private get refining(): boolean {
@@ -872,12 +941,34 @@ export class Rummy {
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     timer?.mark('glyph');
 
+    // 3b. Transition: mix the held grid with this frame's, cell by cell.
+    let shown = glyphs;
+    const tr = this.transitionState;
+    if (tr && (tr.from.width !== glyphs.width || tr.from.height !== glyphs.height)) {
+      this.endTransition(); // the grid was resized; nothing sensible to mix
+    } else if (tr) {
+      tr.elapsed += this.dt * 1000;
+      const mp = programs.mix;
+      this.pass(tr.mix, mp);
+      this.bind(0, tr.from.textures[0], mp.u.uFromGlyphs);
+      this.bind(1, tr.from.textures[1], mp.u.uFromCells);
+      this.bind(2, glyphs.textures[0], mp.u.uToGlyphs);
+      this.bind(3, glyphs.textures[1], mp.u.uToCells);
+      gl.uniform1f(mp.u.uProgress, Math.min(1, tr.elapsed / tr.duration));
+      gl.uniform1i(mp.u.uStyle, tr.style);
+      gl.uniform1f(mp.u.uTick, Math.floor(tr.elapsed / 50));
+      gl.uniform1i(mp.u.uCount, atlas.chars.length);
+      gl.uniform2i(mp.u.uGrid, glyphs.width, glyphs.height);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      shown = tr.mix;
+    }
+
     // 4. Glow: blur the cells' light at cell resolution.
     if (glow) {
       const wp = programs.glow;
       const [ga, gb] = this.glowTargets!;
       this.pass(ga, wp);
-      this.bind(0, glyphs.textures[0], wp.u.uSource);
+      this.bind(0, shown.textures[0], wp.u.uSource);
       this.bind(1, this.shapesTex, wp.u.uShapes);
       gl.uniform1i(wp.u.uFromGlyphs, 1);
       gl.uniform2i(wp.u.uDirection, 1, 0);
@@ -894,8 +985,8 @@ export class Rummy {
     // 5. Composite at full resolution.
     const cp = programs.composite;
     this.pass(null, cp);
-    this.bind(0, glyphs.textures[0], cp.u.uGlyphs);
-    this.bind(1, glyphs.textures[1], cp.u.uCells);
+    this.bind(0, shown.textures[0], cp.u.uGlyphs);
+    this.bind(1, shown.textures[1], cp.u.uCells);
     this.bind(2, this.atlasTex, cp.u.uAtlas);
     this.bind(3, this.glowTargets![1].textures[0], cp.u.uGlowTex);
     gl.uniform2i(cp.u.uCell, atlas.cellWidth, atlas.cellHeight);
@@ -915,6 +1006,7 @@ export class Rummy {
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     timer?.mark('composite');
     timer?.endFrame();
+    if (tr && this.transitionState === tr && tr.elapsed >= tr.duration) this.endTransition();
     this.dirty = false;
   }
 
@@ -937,6 +1029,29 @@ export class Rummy {
     const src = w > 0 && h > 0 ? w / h : aspect;
     const scale: [number, number] = src > aspect ? [aspect / src, 1] : [1, src / aspect];
     gl.uniform2f(sp.u.uSourceScale, scale[0], scale[1]);
+  }
+
+  /** Copy both layers of a glyph grid (index + colour, background) with the mix pass. */
+  private copyGrid(src: Target, dst: Target): void {
+    const gl = this.gl;
+    const mp = this.programs!.mix;
+    gl.bindVertexArray(this.vao);
+    this.pass(dst, mp);
+    this.bind(0, src.textures[0], mp.u.uToGlyphs);
+    this.bind(1, src.textures[1], mp.u.uToCells);
+    this.bind(2, src.textures[0], mp.u.uFromGlyphs);
+    this.bind(3, src.textures[1], mp.u.uFromCells);
+    gl.uniform1i(mp.u.uStyle, 4);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+
+  private endTransition(): void {
+    const t = this.transitionState;
+    if (!t) return;
+    this.transitionState = null;
+    deleteTarget(this.gl, t.from);
+    deleteTarget(this.gl, t.mix);
+    t.resolve();
   }
 
   /** The scene's own uniforms. Samplers take texture units from 2 up (0 and 1 are the source and history). */

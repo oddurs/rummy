@@ -102,7 +102,7 @@
 
 <div class="stage" style:--bg={bg} style:--accent={theme.accent} style:--fg={theme.text} style:--dim={theme.dim}>
   {#if ready}
-    <Rummy options={options} paused={s.paused} bind:instance={engine} />
+    <Rummy options={options} paused={s.paused} transition="decode" bind:instance={engine} />
   {/if}
 
   <aside class="panel" class:open>

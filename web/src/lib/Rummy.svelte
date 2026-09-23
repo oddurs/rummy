@@ -4,7 +4,7 @@
   server it renders an empty canvas; the scene starts once hydrated.
 -->
 <script lang="ts">
-  import { Rummy, type RummyOptions } from '@oddurs/rummy';
+  import { Rummy, type RummyOptions, type TransitionStyle } from '@oddurs/rummy';
   import { untrack } from 'svelte';
 
   interface Props {
@@ -13,9 +13,17 @@
     class?: string;
     /** The live instance, for reading `stats` or calling methods. */
     instance?: Rummy | null;
+    /** Animate scene changes with this transition instead of cutting. */
+    transition?: TransitionStyle | false;
   }
 
-  let { options = {}, paused = false, class: className = '', instance = $bindable(null) }: Props = $props();
+  let {
+    options = {},
+    paused = false,
+    class: className = '',
+    instance = $bindable(null),
+    transition = false,
+  }: Props = $props();
 
   let canvas: HTMLCanvasElement;
   let unsupported = $state(false);
@@ -38,7 +46,11 @@
 
   $effect(() => {
     const next = $state.snapshot(options) as Partial<RummyOptions>;
-    untrack(() => instance)?.set(next);
+    const r = untrack(() => instance);
+    if (!r) return;
+    const style = untrack(() => transition);
+    if (style && next.scene !== undefined && next.scene !== r.options.scene) void r.transition(next, { style });
+    else r.set(next);
   });
 
   $effect(() => {

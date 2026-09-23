@@ -138,8 +138,11 @@ applyLook(state.look);
 syncForm(state);
 
 function update(next: State): void {
+  const sceneChanged = next.scene !== state.scene;
   state = next;
-  rummy.set(toOptions(state));
+  // New scenes arrive by transition; everything else changes in place.
+  if (sceneChanged) void rummy.transition(toOptions(state), { style: 'decode' });
+  else rummy.set(toOptions(state));
   if (state.paused) rummy.pause();
   else rummy.play();
   applyLook(state.look);

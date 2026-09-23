@@ -68,3 +68,7 @@ Re-measured after the scene rework: library 14.07 KB, core 12.05 KB gzipped (the
 ## Budget raised in 0.3
 
 Custom uniforms (0020) put the core 0.03 KB over the 12.5 KB gate, after the GLSL minifier had already been tightened again (no space when joining lines unless both sides are identifier characters; only 0.06 KB, since gzip handles spaces well). Raised to 13 KB core / 15.5 KB library as a recorded decision: a feature, not creep. Identifier mangling (0051) is how to earn it back.
+
+## Budget raised again in 0.3
+
+Transitions (0022) added 0.88 KB gzipped: the mix shader plus JS. Before raising, identifier mangling (0051) was measured, at 0.17 KB, and dropped. GLSL is ~10 KB of the gzipped bundle and is the features themselves. New gates: core 14 KB, library 16.5 KB. The original 6 KB core target isn't compatible with this feature set; about 14 KB is still a tenth of three.js.

@@ -5,7 +5,7 @@
  * Open /shots.html to look at it; scripts/shots.mjs drives the same page
  * headlessly through `window.__shots` to write PNGs and diffs.
  */
-import { Rummy, charsets, defaults, palettes, scenes, type RummyOptions, type SceneName } from '../src';
+import { Rummy, charsets, defaults, palettes, scenes, type RummyOptions, type SceneName, type TransitionStyle } from '../src';
 import { lookDefaults, looks, type LookName } from './looks';
 import { buildAtlas, normalizeCharset } from '../src/atlas';
 
@@ -58,6 +58,8 @@ interface Shot {
   options: Partial<RummyOptions>;
   /** CSS size; default 480x300. */
   size?: [number, number];
+  /** Freeze a transition to another scene partway through. */
+  transition?: { to: SceneName; style: TransitionStyle; at: number };
 }
 
 /** A deliberately underexposed "photo": what auto-exposure exists for. */
@@ -131,6 +133,13 @@ shots.push(
     scene,
     options: { ...phosphor, fontSize: 16 },
     size: [960, 540],
+  })),
+  // Transitions, frozen halfway from ring to globe.
+  ...(['decode', 'wipe', 'rain'] as TransitionStyle[]).map((style): Shot => ({
+    name: `transition-${style}`,
+    scene: 'ring',
+    options: { ...lookDefaults, ...looks.scene.options },
+    transition: { to: 'globe', style, at: 0.5 },
   })),
   // Before/after pairs for each look feature.
   // Scroll-driven camera moves, pinned halfway.
@@ -220,6 +229,11 @@ async function render(name: string): Promise<string> {
   rummy.resize();
   rummy.time = typeof options.scene === 'string' ? Rummy.stillOf(options.scene) : 0;
   for (let i = 0; i < 17; i++) rummy.render();
+  if (shot.transition) {
+    const { to, style, at } = shot.transition;
+    void rummy.transition({ scene: scenes[to] }, { style, duration: 1000 });
+    for (let i = 0; i < Math.round(at * 60); i++) rummy.step(1 / 60);
+  }
   return canvas.toDataURL('image/png');
 }
 
@@ -550,6 +564,119 @@ async function scrollCheck(): Promise<{ tracked: number; pinned: number; readsPe
   }
 }
 
+/**
+ * Transitions: they resolve and end on exactly the live frame, have all three
+ * states (old, scramble, new) halfway, don't jump when interrupted, and finish
+ * on a paused renderer in real time.
+ */
+async function transitionCheck(): Promise<{
+  resolved: boolean;
+  endsLive: boolean;
+  halfway: { from: number; to: number; scramble: number };
+  interruptJump: number;
+  pausedFinishedMs: number;
+}> {
+  await render('ring-scene');
+  const r = rummy!;
+  const from = r.toText();
+  let resolved = false;
+  const done = r.transition({ scene: scenes.globe }, { style: 'decode', duration: 600 }).then(() => (resolved = true));
+  const frames: string[] = [];
+  for (let i = 0; i < 40; i++) {
+    r.step(1 / 60);
+    frames.push(r.toText());
+  }
+  await done;
+  // Halfway through: which cells show the old frame, the new one, or scramble?
+  const mid = frames[17];
+  const end = frames[frames.length - 1];
+  let f = 0, t = 0, x = 0, n = 0;
+  for (let i = 0; i < mid.length; i++) {
+    if (mid[i] === '\n' || (from[i] === ' ' && end[i] === ' ')) continue;
+    n++;
+    if (mid[i] === from[i]) f++;
+    else if (mid[i] === end[i]) t++;
+    else x++;
+  }
+  // A twin renderer makes the same change as a plain cut, stepped identically:
+  // once the transition is over, the two must show exactly the same frame.
+  const twinCanvas = document.createElement('canvas');
+  twinCanvas.style.cssText = canvas.style.cssText;
+  document.body.append(twinCanvas);
+  const twin = new Rummy(twinCanvas, { ...r.options, scene: scenes.ring });
+  twin.pause();
+  twin.resize();
+  twin.time = Rummy.stillOf(scenes.ring);
+  for (let i = 0; i < 17; i++) twin.render();
+  twin.set({ scene: scenes.globe });
+  twin.time = r.time - 40 / 60;
+  for (let i = 0; i < 40; i++) twin.step(1 / 60);
+  const endsLive = twin.toText() === end;
+  twin.destroy();
+  twinCanvas.remove();
+
+  // Interrupt partway: the next frame should look like the last one.
+  void r.transition({ scene: scenes.ring }, { style: 'wipe', duration: 800 });
+  for (let i = 0; i < 20; i++) r.step(1 / 60);
+  const before = r.toText();
+  const second = r.transition({ scene: scenes.tunnel }, { style: 'rain', duration: 800 });
+  r.step(1 / 60);
+  const after = r.toText();
+  let changed = 0, cells = 0;
+  for (let i = 0; i < before.length; i++) {
+    if (before[i] === '\n') continue;
+    cells++;
+    if (before[i] !== after[i]) changed++;
+  }
+  for (let i = 0; i < 60; i++) r.step(1 / 60);
+  await second;
+
+  // Paused renderer, real time: it must still run the transition to the end.
+  r.pause();
+  const t0 = performance.now();
+  await Promise.race([r.transition({ scene: scenes.blobs }, { duration: 400 }), new Promise((ok) => setTimeout(ok, 3000))]);
+  const pausedFinishedMs = performance.now() - t0;
+
+  return {
+    resolved,
+    endsLive,
+    halfway: { from: f / n, to: t / n, scramble: x / n },
+    interruptJump: changed / cells,
+    pausedFinishedMs,
+  };
+}
+
+/** Reduced motion: a transition is a dissolve with no scramble. Run with the media feature emulated. */
+async function reducedTransitionCheck(): Promise<{ reduced: boolean; scramble: number }> {
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const c = document.createElement('canvas');
+  c.style.cssText = 'position:fixed;left:0;top:0;width:480px;height:300px;';
+  document.body.append(c);
+  // Two scenes with no motion, so every change is the transition's own.
+  const r = new Rummy(c, { ...base, ...lookDefaults, ...looks.scene.options, respectReducedMotion: true, scene: testScenes.diamond });
+  r.pause();
+  r.resize();
+  for (let i = 0; i < 17; i++) r.render();
+  const from = r.toText();
+  void r.transition({ scene: testScenes.spike }, { style: 'decode', duration: 900 });
+  const frames: string[] = [];
+  for (let i = 0; i < 30; i++) {
+    r.step(1 / 60);
+    frames.push(r.toText());
+  }
+  const end = frames[frames.length - 1];
+  const mid = frames[7]; // about half of the shortened 250 ms dissolve
+  let x = 0, n = 0;
+  for (let i = 0; i < mid.length; i++) {
+    if (mid[i] === '\n') continue;
+    n++;
+    if (mid[i] !== from[i] && mid[i] !== end[i]) x++;
+  }
+  r.destroy();
+  c.remove();
+  return { reduced, scramble: x / n };
+}
+
 /** Which glyph pairs flicker (A→B→A) in motion, most common first. For diagnosing boil. */
 async function flickerPairs(scene: SceneName, frames = 60): Promise<[string, number][]> {
   const c = document.createElement('canvas');
@@ -612,6 +739,8 @@ declare global {
       flickerPairs: typeof flickerPairs;
       uniformsCheck: typeof uniformsCheck;
       scrollCheck: typeof scrollCheck;
+      transitionCheck: typeof transitionCheck;
+      reducedTransitionCheck: typeof reducedTransitionCheck;
     };
   }
 }
@@ -630,6 +759,8 @@ window.__shots = {
   flickerPairs,
   uniformsCheck,
   scrollCheck,
+  transitionCheck,
+  reducedTransitionCheck,
 };
 
 // Headless runs drive the page themselves; people get the sheet.

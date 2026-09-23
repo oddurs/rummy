@@ -520,3 +520,76 @@ void main() {
   rgb *= uFlicker;
   outColor = vec4(rgb, alpha) * (1.0 - outside);
 }`;
+
+/**
+ * Transition: mixes a frozen "from" glyph grid with the live "to" grid, per
+ * cell. Each cell switches at its own moment (by style), passing through a
+ * short scramble of random glyphs on the way. Also used, with style 4, to
+ * copy a grid.
+ */
+export const MIX_FS = /* glsl */ `#version 300 es
+precision highp float;
+precision highp int;
+uniform sampler2D uFromGlyphs;
+uniform sampler2D uFromCells;
+uniform sampler2D uToGlyphs;
+uniform sampler2D uToCells;
+uniform float uProgress;   // 0..1
+uniform int uStyle;        // 0 decode, 1 wipe, 2 rain, 3 dissolve, 4 copy "to"
+uniform float uTick;       // changes ~20 times a second, reseeding the scramble
+uniform int uCount;
+uniform ivec2 uGrid;
+layout(location = 0) out vec4 outGlyph;
+layout(location = 1) out vec4 outCell;
+
+float hash(vec2 p) {
+  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
+}
+
+void main() {
+  ivec2 cell = ivec2(gl_FragCoord.xy);
+  vec4 g1 = texelFetch(uToGlyphs, cell, 0);
+  vec4 c1 = texelFetch(uToCells, cell, 0);
+  if (uStyle == 4) {
+    outGlyph = g1;
+    outCell = c1;
+    return;
+  }
+  vec4 g0 = texelFetch(uFromGlyphs, cell, 0);
+  vec4 c0 = texelFetch(uFromCells, cell, 0);
+
+  // When this cell switches (t) and how long it scrambles first (band).
+  float r = hash(vec2(cell));
+  float t, band;
+  if (uStyle == 0) {          // decode: cells resolve in random order
+    t = r * 0.75;
+    band = 0.25;
+  } else if (uStyle == 1) {   // wipe: a scrambling edge sweeps left to right
+    t = float(cell.x) / float(uGrid.x) * 0.85 + r * 0.03;
+    band = 0.12;
+  } else if (uStyle == 2) {   // rain: each column falls from the top at its own time
+    float down = 1.0 - (float(cell.y) + 0.5) / float(uGrid.y);
+    t = hash(vec2(float(cell.x), 7.0)) * 0.45 + down * 0.47;
+    band = 0.08;
+  } else {                    // dissolve: no scramble, for reduced motion
+    t = r * 0.95;
+    band = 0.0;
+  }
+  float p = uProgress * (1.0 + band);
+
+  bool empty = g0.r < 0.5 / 255.0 && g1.r < 0.5 / 255.0;
+  if (p < t) {
+    outGlyph = g0;
+    outCell = c0;
+  } else if (p < t + band && !empty) {
+    int idx = 1 + int(floor(hash(vec2(cell) + uTick * 1.618) * float(uCount - 1)));
+    vec3 lit = min(max(g1.gba, g0.gba) * 1.35 + 0.08, vec3(1.0));
+    outGlyph = vec4(float(idx) / 255.0, lit);
+    outCell = c1;
+  } else {
+    outGlyph = g1;
+    outCell = c1;
+  }
+}`;
