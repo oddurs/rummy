@@ -2,12 +2,12 @@
 id: 53
 title: A SvelteKit website with a server, on port 4499
 type: feature
-status: review
+status: shipped
 milestone: v0.3
 assignee: Oddur Sigurdsson
 claimed: 2026-09-22
 created: 2026-09-22
-updated: 2026-09-22
+updated: 2026-09-23
 priority: p1
 pillar: launch
 area: demo
@@ -52,7 +52,7 @@ Nothing in the library bundle. CI gains a web check and build job.
 - [x] `/roadmap` renders from the cairn items on the server
 - [x] `/healthz` returns JSON
 - [x] CSP and security headers on every response; no third-party requests
-- [ ] svelte-check clean, and a CI job that checks and builds the site
+- [x] svelte-check clean, and a CI job that checks and builds the site
 
 ## Built
 
@@ -80,3 +80,7 @@ Found and fixed along the way:
 
 Not done: deployment. Nothing is hosted yet. `web/README.md` covers any Node host;
 Railway would be the obvious one here.
+
+## Shipped
+
+PR #3: all CI checks passed, including the new `web` job, which is now required on main.

@@ -2,10 +2,10 @@
 id: 17
 title: 'An opt-in CRT: curvature, vignette, mask, chromatic fringe'
 type: look
-status: review
+status: shipped
 milestone: v0.2
 created: 2026-09-22
-updated: 2026-09-22
+updated: 2026-09-23
 priority: p2
 pillar: look
 area: engine
@@ -36,7 +36,7 @@ Side by side with a reference photo of a real terminal.
 
 ## Acceptance criteria
 
-- [ ] Before/after screenshots attached to the PR
+- [x] Before/after screenshots attached to the PR
 - [x] Frame cost within `budget`
 - [x] Glyphs stay crisp at the centre of the screen with curvature on
 - [x] No flicker under prefers-reduced-motion
@@ -56,3 +56,7 @@ The demo's `crt` look pairs it with amber, glow and scanlines.
 Evidence: demo screenshot with `look=crt` shows centre glyphs crisp and curvature at
 the edges. Bench, crt on vs off: within noise. Flicker is gated on `animating`, which
 is false under reduced motion.
+
+## Closed out in PR #4
+
+Before/after pair: `tunnel-crt` vs `tunnel-crt-off` (same look, CRT and scanlines off).

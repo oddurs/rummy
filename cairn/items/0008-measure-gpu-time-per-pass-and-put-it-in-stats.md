@@ -2,10 +2,10 @@
 id: 8
 title: Measure GPU time per pass and put it in stats
 type: perf
-status: review
+status: blocked
 milestone: v0.2
 created: 2026-09-22
-updated: 2026-09-22
+updated: 2026-09-23
 priority: p0
 pillar: speed
 area: engine
@@ -72,3 +72,19 @@ Per-pass numbers carry about ±0.2 ms of noise; totals are steadier.
 
 **Still missing:** Android. It needs a real device (`/bench.html` in a browser). An
 M1 number would also be good, since scene budgets are written against it.
+
+## Closed out in PR #4
+
+Tried the M1 through CI. A `Bench` workflow runs `pnpm bench` on GitHub's
+macos-14 runners (Apple M1 VMs, "Apple Paravirtual device" GPU). 1080p totals:
+ring 2.46, terrain 3.33, blobs 2.46, globe 2.35, tunnel 2.39 ms, at 35–46 ms per
+frame.
+
+Those numbers describe the VM, not an M1. The tunnel's scene pass is trivial and
+it totals 0.98 ms on a real M4, yet 2.39 ms here. The fixed overhead of the
+paravirtualized GPU swamps the per-scene cost, and per-pass differences go
+negative in places.
+
+**Blocked on hardware:** criterion 4 needs a real M1 and a mid-range Android phone
+running `/bench.html`. The publishing work already lives in "Publish benchmark
+numbers across real devices" (v1.0).

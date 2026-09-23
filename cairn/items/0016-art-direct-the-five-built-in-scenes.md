@@ -2,12 +2,12 @@
 id: 16
 title: Art-direct the five built-in scenes
 type: look
-status: review
+status: blocked
 milestone: v0.2
 depends_on:
 - 7
 created: 2026-09-22
-updated: 2026-09-22
+updated: 2026-09-23
 priority: p0
 pillar: look
 area: scenes
@@ -83,3 +83,7 @@ against an M1, which hasn't been measured, so criterion 2 stays open.
 ## Before/after
 
 v0.1 vs v0.2 images for ring, terrain and globe are in the PR #1 description; every scene in every look is in its `shots` artifact.
+
+## Closed out in PR #4
+
+Blobs lighting toned down after the silhouette work: the interior was a wall of `$@`. **Blocked on hardware** for criterion 2. The M1 attempt through CI measured the VM's paravirtualized GPU, not an M1 (see the GPU-timing item). On the M4 every scene totals ≤ 1.73 ms at 1080p.

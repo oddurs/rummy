@@ -2,12 +2,12 @@
 id: 13
 title: 'Glow that costs nothing: bloom at cell resolution'
 type: look
-status: review
+status: shipped
 milestone: v0.2
 depends_on:
 - 7
 created: 2026-09-22
-updated: 2026-09-22
+updated: 2026-09-23
 priority: p1
 pillar: look
 area: engine
@@ -43,7 +43,7 @@ All palettes, dark backgrounds especially. Must not muddy `paper`.
 
 ## Acceptance criteria
 
-- [ ] Before/after screenshots attached to the PR
+- [x] Before/after screenshots attached to the PR
 - [x] Frame cost within `budget`
 - [x] No full-resolution intermediate buffer
 
@@ -58,3 +58,7 @@ dark demo looks use it.
 Cost, M4 1080p: the glow column reads 0.03 to 0.23 ms, which is inside the timer's
 noise, and totals with glow 0.35 vs 0 are indistinguishable. The budget holds as far
 as this timer can resolve.
+
+## Closed out in PR #4
+
+Before/after pair: `ring-phosphor` vs `ring-no-glow` in PR #4's `shots` artifact.

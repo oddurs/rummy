@@ -2,12 +2,12 @@
 id: 12
 title: 'Two-tone cells: a background colour per cell'
 type: look
-status: review
+status: shipped
 milestone: v0.2
 depends_on:
 - 7
 created: 2026-09-22
-updated: 2026-09-22
+updated: 2026-09-23
 priority: p1
 pillar: look
 area: engine
@@ -45,9 +45,9 @@ a dropped photo.
 
 ## Acceptance criteria
 
-- [ ] Before/after screenshots attached to the PR
+- [x] Before/after screenshots attached to the PR
 - [x] Frame cost within `budget`
-- [ ] With `blocks`, a photo is recognisable at 12px
+- [x] With `blocks`, a photo is recognisable at 12px
 - [x] Off by default; existing output unchanged when off
 
 ## Built in 0.2
@@ -63,3 +63,7 @@ entirely and the background is the global `bg`. Bench: 1 vs 0 within noise.
 
 **Not verified:** a real photo at 12px (criterion 3). Only the synthetic dark source and
 the scenes were tested; drop a photo on the demo with the `blocks` charset.
+
+## Closed out in PR #4
+
+Real photo: NASA's AS11-40-5903 (public domain, now demo/public/fixtures/aldrin.jpg) at 12px with the blocks charset and cellBackground 1 (`photo-blocks-two-tone`). The astronaut's legs and boots, his long shadow and the craters are all plainly readable. Before/after pair: `terrain-scene` vs `terrain-two-tone`.
