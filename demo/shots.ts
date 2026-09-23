@@ -32,6 +32,11 @@ vec4 scene(vec2 uv) {
   vec3 img = texture(uImage, uv).rgb;
   return vec4(mix(img * 0.4, uTint, shape), 0.5);
 }`,
+  // uScroll as a fill from the left: the filled share of columns is its value.
+  scrollbar: /* glsl */ `
+vec4 scene(vec2 uv) {
+  return vec4(vec3(step(uv.x, uScroll) * 0.9), 0.5);
+}`,
   // A flat diamond: every silhouette is a 45° diagonal.
   diamond: /* glsl */ `
 vec4 scene(vec2 uv) {
@@ -128,6 +133,12 @@ shots.push(
     size: [960, 540],
   })),
   // Before/after pairs for each look feature.
+  // Scroll-driven camera moves, pinned halfway.
+  ...(['ring', 'terrain', 'globe', 'tunnel'] as SceneName[]).map((scene): Shot => ({
+    name: `${scene}-scrolled`,
+    scene,
+    options: { ...phosphor, scroll: 0.6 },
+  })),
   { name: 'ring-no-glow', scene: 'ring', options: { ...phosphor, glow: 0 } },
   {
     name: 'terrain-two-tone',
@@ -321,7 +332,7 @@ async function silhouettes(): Promise<Record<'spike' | 'diamond', { edges: Outli
   return { spike: await measure('spike'), diamond: await measure('diamond') };
 }
 
-const frame = () => new Promise<number>((r) => requestAnimationFrame(r));
+const frame = () => new Promise<number>((resolve) => requestAnimationFrame(resolve));
 
 /**
  * Auto-exposure over time on a live source: a steady dark frame (does it hold
@@ -491,6 +502,54 @@ async function uniformsCheck(): Promise<{ compiles: number; changed: boolean; me
   }
 }
 
+/**
+ * Scroll: uScroll follows the page (read once per frame, never while paused)
+ * and a number pins it.
+ */
+async function scrollCheck(): Promise<{ tracked: number; pinned: number; readsPerFrame: number; readsWhilePaused: number }> {
+  const spacer = document.createElement('div');
+  spacer.style.cssText = 'height:4000px';
+  document.body.append(spacer);
+  const c = document.createElement('canvas');
+  c.style.cssText = 'position:absolute;left:0;top:0;width:480px;height:400px;';
+  document.body.append(c);
+  const r = new Rummy(c, { ...base, fontSize: 10, antialias: 0, scene: testScenes.scrollbar, pauseOffscreen: false });
+  const fill = () => {
+    const rows = r.toText().split('\n');
+    const row = rows[Math.floor(rows.length / 2)];
+    return row.replace(/ +$/, '').length / row.length;
+  };
+  let reads = 0;
+  const rect = Element.prototype.getBoundingClientRect;
+  Element.prototype.getBoundingClientRect = function (this: Element) {
+    if (this === c) reads++;
+    return rect.call(this);
+  };
+  try {
+    window.scrollTo(0, 200); // canvas top 200px above the viewport: half of 400px
+    for (let i = 0; i < 90; i++) await frame();
+    const tracked = fill();
+    reads = 0;
+    for (let i = 0; i < 30; i++) await frame();
+    const readsPerFrame = reads / 30;
+    r.pause();
+    await frame();
+    reads = 0;
+    for (let i = 0; i < 30; i++) await frame();
+    const readsWhilePaused = reads;
+    r.set({ scroll: 0.25 });
+    r.render();
+    const pinned = fill();
+    return { tracked, pinned, readsPerFrame, readsWhilePaused };
+  } finally {
+    Element.prototype.getBoundingClientRect = rect;
+    r.destroy();
+    c.remove();
+    spacer.remove();
+    window.scrollTo(0, 0);
+  }
+}
+
 /** Which glyph pairs flicker (A→B→A) in motion, most common first. For diagnosing boil. */
 async function flickerPairs(scene: SceneName, frames = 60): Promise<[string, number][]> {
   const c = document.createElement('canvas');
@@ -552,6 +611,7 @@ declare global {
       churn: typeof churn;
       flickerPairs: typeof flickerPairs;
       uniformsCheck: typeof uniformsCheck;
+      scrollCheck: typeof scrollCheck;
     };
   }
 }
@@ -569,6 +629,7 @@ window.__shots = {
   churn,
   flickerPairs,
   uniformsCheck,
+  scrollCheck,
 };
 
 // Headless runs drive the page themselves; people get the sheet.

@@ -2,7 +2,7 @@
  * Built-in scenes. Each is a GLSL snippet defining `vec4 scene(vec2 uv)`
  * (rgb + depth in 0..1). They run at cell resolution, so a generous raymarch
  * budget is still cheap. Helpers available: rot, screen, noise, fbm, hash12/13,
- * and uniforms uTime, uMouse, uAspect, uResolution, uOffset.
+ * and uniforms uTime, uMouse, uScroll, uAspect, uResolution, uOffset.
  *
  * `#define STILL t` marks each scene's composed moment: rummy starts there,
  * and it is the frame shown under prefers-reduced-motion.
@@ -26,7 +26,7 @@ export const ring = /* glsl */ `
 #define STILL 2.2
 float map(vec3 p) {
   p.yz *= rot(0.55 + uMouse.y * 0.4 + sin(uTime * 0.31) * 0.15);
-  p.xz *= rot(uTime * 0.22 + uMouse.x * 0.9);
+  p.xz *= rot(uTime * 0.22 + uMouse.x * 0.9 + uScroll * 1.6);
   p.xy *= rot(0.35);
   float a = atan(p.z, p.x);
   vec2 q = vec2(length(p.xz) - 1.0, p.y);
@@ -37,7 +37,8 @@ float map(vec3 p) {
 ${RAYMARCH_NORMAL}
 vec4 scene(vec2 uv) {
   vec2 p = screen(uv);
-  vec3 ro = vec3(0.0, 0.0, 3.4);
+  // Scrolling pulls the camera back as the ring turns away.
+  vec3 ro = vec3(0.0, 0.0, 3.4 + uScroll * 2.2);
   vec3 rd = normalize(vec3(p, -1.9));
   float t = 0.0;
   bool hit = false;
@@ -45,7 +46,7 @@ vec4 scene(vec2 uv) {
     float d = map(ro + rd * t);
     if (d < 0.001) { hit = true; break; }
     t += d;
-    if (t > 8.0) break;
+    if (t > 10.0) break;
   }
   if (!hit) return vec4(0.0, 0.0, 0.0, 1.0);
   vec3 pos = ro + rd * t;
@@ -84,8 +85,9 @@ float height(vec2 p, int octaves) {
 float height(vec2 p) { return height(p, 4); }
 vec4 scene(vec2 uv) {
   vec2 p = screen(uv);
-  float horizon = 0.1;
-  vec3 ro = vec3(uMouse.x * 0.6, 0.55 + uMouse.y * 0.15, -uTime * 1.6);
+  // Scrolling lifts the camera over the valley and tips it down.
+  float horizon = 0.1 + uScroll * 0.45;
+  vec3 ro = vec3(uMouse.x * 0.6, 0.55 + uMouse.y * 0.15 + uScroll * 1.6, -uTime * 1.6);
   vec3 rd = normalize(vec3(p.x, p.y - horizon, -1.6));
   rd.xy *= rot(sin(uTime * 0.23) * 0.03);
 
@@ -190,7 +192,8 @@ vec4 scene(vec2 uv) {
 export const globe = /* glsl */ `
 #define STILL 4.0
 vec4 scene(vec2 uv) {
-  vec2 p = screen(uv) * 1.15;
+  // Scrolling sends the planet off into the distance, spinning.
+  vec2 p = screen(uv) * (1.15 + uScroll * 1.1);
   float r2 = dot(p, p);
   vec3 L = normalize(vec3(-0.65, 0.45, 0.75));
   if (r2 > 1.0) {
@@ -203,7 +206,7 @@ vec4 scene(vec2 uv) {
   vec3 n = vec3(p, sqrt(1.0 - r2));
   vec3 q = n;
   q.yz *= rot(0.4 + uMouse.y * 0.3);
-  q.xz *= rot(uTime * 0.16 + uMouse.x * 1.2);
+  q.xz *= rot(uTime * 0.16 + uMouse.x * 1.2 + uScroll * 3.0);
   float lat = asin(clamp(q.y, -1.0, 1.0));
   float lon = atan(q.z, q.x);
   float land = smoothstep(0.52, 0.55, fbm(q * 1.8 + 3.0));
@@ -229,7 +232,7 @@ vec4 scene(vec2 uv) {
   p *= rot(uTime * 0.12);
   float r = pow(pow(abs(p.x), 6.0) + pow(abs(p.y), 6.0), 1.0 / 6.0);
   float a = atan(p.y, p.x) / TAU;
-  float z = 0.35 / max(r, 0.001) + uTime * 1.1;
+  float z = 0.35 / max(r, 0.001) + uTime * 1.1 + uScroll * 6.0;
   vec2 tuv = vec2(a * 8.0, z);
   vec2 w = fwidth(tuv) * 0.9 + 0.01;
   vec2 f = abs(fract(tuv) - 0.5);

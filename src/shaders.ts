@@ -21,6 +21,7 @@ precision highp int;
 
 uniform float uTime;
 uniform vec2 uMouse;       // -1..1, y up, smoothed
+uniform float uScroll;     // 0 at the top of the canvas .. 1 scrolled out, smoothed
 uniform float uAspect;     // grid width / height
 uniform vec2 uResolution;  // scene target size in samples
 uniform vec2 uOffset;      // focal point shift in screen() units

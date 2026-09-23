@@ -110,6 +110,13 @@ export interface RummyOptions {
   timeScale: number;
   /** Track the pointer and feed it to scenes as uMouse. */
   mouse: boolean;
+  /**
+   * Feed page scroll to scenes as uScroll: 0 while the canvas top is at the
+   * viewport top, 1 once it has scrolled out. `false` holds it at 0; a number
+   * drives it yourself (a scrubber, a scroll timeline of your own). Held at 0
+   * under prefers-reduced-motion, since scroll-linked motion is a common trigger.
+   */
+  scroll: boolean | number;
   /** Shift the scene's focal point, in screen() units (y spans -1..1). */
   offset: [number, number];
   /** Stop rendering while the canvas is off screen. */
@@ -160,6 +167,7 @@ export const defaults: RummyOptions = {
   maxFps: 0,
   timeScale: 1,
   mouse: true,
+  scroll: true,
   offset: [0, 0],
   pauseOffscreen: true,
   respectReducedMotion: true,
@@ -272,6 +280,7 @@ export class Rummy {
   private exposureFresh = true;
   private mouse: [number, number] = [0, 0];
   private mouseTarget: [number, number] = [0, 0];
+  private scroll = 0;
   private onscreen = true;
   private playing = true;
   private dirty = true;
@@ -695,6 +704,7 @@ export class Rummy {
     const k = 1 - Math.exp(-dt * 5);
     this.mouse[0] += (this.mouseTarget[0] - this.mouse[0]) * k;
     this.mouse[1] += (this.mouseTarget[1] - this.mouse[1]) * k;
+    this.scroll += (this.scrollTarget() - this.scroll) * k;
 
     const interval = this.opts.maxFps > 0 ? 1000 / this.opts.maxFps : 0;
     const due = now - this.lastDrawn >= interval - 1;
@@ -711,6 +721,14 @@ export class Rummy {
     if (!this.moving) this.last = -1;
     this.schedule();
   };
+
+  /** Where uScroll is heading: one layout read, only from the running loop. */
+  private scrollTarget(): number {
+    const { scroll, respectReducedMotion } = this.opts;
+    if (scroll === false || typeof scroll === 'number' || (respectReducedMotion && this.reducedMotion)) return 0;
+    const r = this.canvas.getBoundingClientRect();
+    return r.height > 0 ? Math.min(1, Math.max(0, -r.top / r.height)) : 0;
+  }
 
   private resolvedCrt(): CrtOptions {
     const { crt } = this.opts;
@@ -774,6 +792,7 @@ export class Rummy {
     const aspect = (glyphs.width * atlas.cellWidth) / (glyphs.height * atlas.cellHeight);
     gl.uniform1f(sp.u.uTime, this.clock);
     gl.uniform2f(sp.u.uMouse, this.mouse[0], this.mouse[1]);
+    gl.uniform1f(sp.u.uScroll, typeof o.scroll === 'number' ? o.scroll : this.scroll);
     gl.uniform1f(sp.u.uAspect, aspect);
     gl.uniform2f(sp.u.uResolution, scene.width, scene.height);
     gl.uniform2f(sp.u.uOffset, o.offset[0], o.offset[1]);
