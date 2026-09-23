@@ -4,6 +4,7 @@
  *
  *   silhouettes  straight outlines draw as strokes (/ \ | _ - ' .), not letters
  *   motion       no boil (A→B→A flicker) and no lag against point sampling
+ *   uniforms     custom uniforms apply live, merge, and never recompile
  *   exposure     auto-exposure holds still on a steady source and settles
  *                after a cut without overshooting
  *
@@ -65,6 +66,14 @@ for (const c of churn) {
 check(churn.every((c) => c.flicker < 0.005), 'no boil: under 0.5% of cells flicker (A→B→A) in any scene');
 const worst = Math.max(...churn.map((c) => c.error - c.errorPoints));
 check(worst < 0.015, `temporal smoothing costs < 1.5 points of accuracy against point sampling (worst ${pct(worst)})`);
+
+// --- custom uniforms -----------------------------------------------------------------
+const u = await chrome.evaluate('window.__shots.uniformsCheck()');
+console.log('\ncustom uniforms');
+check(u.changed, 'uniform values reach the scene (each change alters the frame)');
+check(u.compiles === 0, `set({ uniforms }) never recompiles (${u.compiles} shader compiles)`);
+check(u.merged, 'set({ uniforms }) merges with the existing values');
+check(u.warnings === 1, `an unknown uniform warns once and doesn't throw (${u.warnings} warning)`);
 
 // --- exposure --------------------------------------------------------------------
 const exp = await chrome.evaluate('window.__shots.exposure()');

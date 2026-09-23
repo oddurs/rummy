@@ -2,10 +2,12 @@
 id: 20
 title: Custom uniforms, settable live
 type: feature
-status: planned
+status: shipped
 milestone: v0.3
+assignee: Oddur Sigurdsson
+claimed: 2026-09-23
 created: 2026-09-22
-updated: 2026-09-22
+updated: 2026-09-23
 priority: p0
 pillar: content
 area: api
@@ -39,6 +41,27 @@ A few hundred bytes. Per frame, one `uniform*` call per custom uniform.
 
 ## Acceptance criteria
 
-- [ ] float, vec2–4, bool and texture uniforms work
-- [ ] `set({ uniforms })` merges and never recompiles
-- [ ] Documented, with an example scene that uses one
+- [x] float, vec2–4, bool and texture uniforms work
+- [x] `set({ uniforms })` merges and never recompiles
+- [x] Documented, with an example scene that uses one
+
+## Built
+
+`uniforms: Record<string, UniformValue>`:
+- number → `float`, boolean → `bool`, 2–4 numbers → `vec2`–`vec4`
+- image/video/canvas → `sampler2D` on texture units 2 and up, uploaded y-flipped
+  so `texture(uTex, uv)` lines up with the scene's y-up `uv`. Static images upload
+  once; video and canvases every frame.
+
+`set({ uniforms })` merges into the current values. Unknown names log one
+`console.warn` and are skipped.
+
+Verified by `pnpm measure` (in CI), with a test scene using all four kinds:
+- each change alters the frame
+- **0 shader compiles** across three `set({ uniforms })` calls, counted by
+  wrapping `compileShader`
+- the first `uTint` survives later partial updates
+- a typo'd name produced exactly one warning and no throw
+
+Shots `uniforms-a` and `uniforms-b` are the same shader with different values.
+Documented in the README with an example scene.

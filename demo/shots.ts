@@ -19,6 +19,19 @@ vec4 scene(vec2 uv) {
   float d = abs(p.x) * 2.1 + abs(p.y) - 0.85;
   return d > 0.0 ? vec4(0.0, 0.0, 0.0, 1.0) : vec4(vec3(0.55), 0.3);
 }`,
+  // Custom uniforms of every kind: vec3, float, bool, sampler2D.
+  uniforms: /* glsl */ `
+uniform vec3 uTint;
+uniform float uRadius;
+uniform bool uRing;
+uniform sampler2D uImage;
+vec4 scene(vec2 uv) {
+  vec2 p = screen(uv);
+  float d = length(p);
+  float shape = uRing ? smoothstep(0.04, 0.0, abs(d - uRadius)) : smoothstep(uRadius, uRadius - 0.02, d);
+  vec3 img = texture(uImage, uv).rgb;
+  return vec4(mix(img * 0.4, uTint, shape), 0.5);
+}`,
   // A flat diamond: every silhouette is a 45° diagonal.
   diamond: /* glsl */ `
 vec4 scene(vec2 uv) {
@@ -150,6 +163,16 @@ shots.push(
     options: { ...lookDefaults, ...looks.scene.options, charset: charsets.blocks, cellBackground: 1, fontSize: 12 },
     size: [960, 540],
   },
+  {
+    name: 'uniforms-a',
+    scene: 'uniforms',
+    options: { ...lookDefaults, ...looks.scene.options, glow: 0, uniforms: { uTint: [1, 0.55, 0.2], uRadius: 0.7, uRing: false } },
+  },
+  {
+    name: 'uniforms-b',
+    scene: 'uniforms',
+    options: { ...lookDefaults, ...looks.scene.options, glow: 0, uniforms: { uTint: [0.3, 0.8, 1], uRadius: 0.45, uRing: true } },
+  },
   { name: 'source-dark-auto', scene: 'source', options: { ...phosphor, exposure: 'auto' } },
   { name: 'source-dark-fixed', scene: 'source', options: { ...phosphor, exposure: 1 } },
 );
@@ -172,6 +195,7 @@ async function render(name: string): Promise<string> {
   const scene =
     shot.scene === 'source' ? dark : shot.scene === 'photo' ? photo : shot.scene in testScenes ? testScenes[shot.scene as keyof typeof testScenes] : scenes[shot.scene as SceneName];
   const options = { ...base, ...shot.options, scene };
+  if (shot.scene === 'uniforms') options.uniforms = { ...options.uniforms, uImage: photo };
   const [w, h] = shot.size ?? [480, 300];
   canvas.style.width = `${w}px`;
   canvas.style.height = `${h}px`;
@@ -430,6 +454,43 @@ async function churn(frames = 90, extra: Partial<RummyOptions> = {}): Promise<Ch
   return results;
 }
 
+/**
+ * Custom uniforms: values reach the scene, `set({ uniforms })` merges and never
+ * recompiles, and an unknown name warns once instead of throwing.
+ */
+async function uniformsCheck(): Promise<{ compiles: number; changed: boolean; merged: boolean; warnings: number }> {
+  let compiles = 0;
+  const proto = WebGL2RenderingContext.prototype;
+  const compile = proto.compileShader;
+  proto.compileShader = function (this: WebGL2RenderingContext, shader: WebGLShader) {
+    compiles++;
+    return compile.call(this, shader);
+  };
+  let warnings = 0;
+  const warn = console.warn;
+  console.warn = () => void warnings++;
+  try {
+    await render('uniforms-a');
+    const first = rummy!.toText();
+    compiles = 0;
+    rummy!.set({ uniforms: { uRadius: 0.45 } });
+    for (let i = 0; i < 17; i++) rummy!.render();
+    const smaller = rummy!.toText();
+    rummy!.set({ uniforms: { uRing: true } });
+    for (let i = 0; i < 17; i++) rummy!.render();
+    const ring = rummy!.toText();
+    rummy!.set({ uniforms: { uTypo: 1 } });
+    rummy!.render();
+    rummy!.render();
+    // Merging: after three partial updates the tint from the first set must survive.
+    const merged = JSON.stringify(rummy!.options.uniforms.uTint) === JSON.stringify([1, 0.55, 0.2]);
+    return { compiles, changed: first !== smaller && smaller !== ring, merged, warnings };
+  } finally {
+    proto.compileShader = compile;
+    console.warn = warn;
+  }
+}
+
 /** Which glyph pairs flicker (A→B→A) in motion, most common first. For diagnosing boil. */
 async function flickerPairs(scene: SceneName, frames = 60): Promise<[string, number][]> {
   const c = document.createElement('canvas');
@@ -490,6 +551,7 @@ declare global {
       glyphShapes: typeof glyphShapes;
       churn: typeof churn;
       flickerPairs: typeof flickerPairs;
+      uniformsCheck: typeof uniformsCheck;
     };
   }
 }
@@ -506,6 +568,7 @@ window.__shots = {
   glyphShapes,
   churn,
   flickerPairs,
+  uniformsCheck,
 };
 
 // Headless runs drive the page themselves; people get the sheet.

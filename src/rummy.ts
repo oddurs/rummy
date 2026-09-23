@@ -27,6 +27,12 @@ import { GpuTimer, type GpuTimes } from './timer';
 /** GLSL defining `vec4 scene(vec2 uv)`, or any image/video/canvas to asciify. */
 export type SceneInput = string | TexImageSource;
 
+/**
+ * A value for a scene's own uniform: number → float, boolean → bool,
+ * 2–4 numbers → vec2–vec4, an image/video/canvas → sampler2D.
+ */
+export type UniformValue = number | boolean | readonly number[] | TexImageSource;
+
 export interface CrtOptions {
   /** Barrel distortion, 0..1. */
   curvature: number;
@@ -112,6 +118,11 @@ export interface RummyOptions {
   respectReducedMotion: boolean;
   /** Measure GPU time per pass into `stats.gpu` (where the browser allows). */
   profile: boolean;
+  /**
+   * Values for uniforms the scene declares itself (`uniform float uSpeed;`).
+   * `set({ uniforms })` merges into the current ones and never recompiles.
+   */
+  uniforms: Readonly<Record<string, UniformValue>>;
 }
 
 
@@ -153,6 +164,7 @@ export const defaults: RummyOptions = {
   pauseOffscreen: true,
   respectReducedMotion: true,
   profile: false,
+  uniforms: {},
 };
 
 export interface RummyStats {
@@ -238,6 +250,9 @@ export class Rummy {
   private shapesTex: WebGLTexture | null = null;
   private sourceTex: WebGLTexture | null = null;
   private sourceUploaded = false;
+  /** Textures for sampler uniforms, by uniform name. */
+  private uniformTextures = new Map<string, { tex: WebGLTexture; source: TexImageSource | null }>();
+  private warnedUniforms = new Set<string>();
   private timer: GpuTimer | null = null;
   private paletteLab = new Float32Array(32 * 3);
   private paletteRgb = new Float32Array(32 * 3);
@@ -329,6 +344,8 @@ export class Rummy {
   set(options: Partial<RummyOptions>): void {
     const prev = this.opts;
     this.opts = { ...prev, ...options };
+    // Uniforms merge, so one value can change without restating the rest.
+    if (options.uniforms) this.opts.uniforms = { ...prev.uniforms, ...options.uniforms };
     const changed = (k: keyof RummyOptions) => k in options && options[k] !== prev[k];
 
     if (this.lost) return;
@@ -459,6 +476,8 @@ export class Rummy {
     if (gl.isContextLost()) return;
     for (const p of Object.values(this.programs ?? {})) gl.deleteProgram(p.program);
     for (const t of [this.atlasTex, this.shapesTex, this.sourceTex]) if (t) gl.deleteTexture(t);
+    for (const { tex } of this.uniformTextures.values()) gl.deleteTexture(tex);
+    this.uniformTextures.clear();
     for (const t of [
       ...(this.sceneTargets ?? []),
       ...(this.exposureTargets ?? []),
@@ -762,6 +781,7 @@ export class Rummy {
     gl.uniform2f(sp.u.uJitter, jx, jy);
     this.bind(1, prev.textures[0], sp.u.uPrev);
     if (isSource(o.scene)) this.bindSource(o.scene, sp, aspect);
+    this.applyUniforms(sp);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     timer?.mark('scene');
 
@@ -900,6 +920,61 @@ export class Rummy {
     gl.uniform2f(sp.u.uSourceScale, scale[0], scale[1]);
   }
 
+  /** The scene's own uniforms. Samplers take texture units from 2 up (0 and 1 are the source and history). */
+  private applyUniforms(sp: Program): void {
+    const gl = this.gl;
+    let unit = 2;
+    for (const [name, value] of Object.entries(this.opts.uniforms)) {
+      const loc = sp.u[name];
+      if (!loc) {
+        // A typo, or a uniform the compiler optimized away. Say so once; never throw.
+        if (!this.warnedUniforms.has(name)) {
+          this.warnedUniforms.add(name);
+          console.warn(`rummy: the scene has no uniform named "${name}" (or it is unused)`);
+        }
+        continue;
+      }
+      if (typeof value === 'number') gl.uniform1f(loc, value);
+      else if (typeof value === 'boolean') gl.uniform1i(loc, value ? 1 : 0);
+      else if (Array.isArray(value)) {
+        if (value.length === 2) gl.uniform2fv(loc, value);
+        else if (value.length === 3) gl.uniform3fv(loc, value);
+        else if (value.length === 4) gl.uniform4fv(loc, value);
+      } else {
+        this.bindUniformTexture(name, value as TexImageSource, unit);
+        gl.uniform1i(loc, unit++);
+      }
+    }
+  }
+
+  private bindUniformTexture(name: string, source: TexImageSource, unit: number): void {
+    const gl = this.gl;
+    let entry = this.uniformTextures.get(name);
+    if (!entry) {
+      const tex = gl.createTexture()!;
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
+      entry = { tex, source: null };
+      this.uniformTextures.set(name, entry);
+    }
+    gl.activeTexture(gl.TEXTURE0 + unit);
+    gl.bindTexture(gl.TEXTURE_2D, entry.tex);
+    const [w, h] = sourceSize(source);
+    const ready = w > 0 && h > 0 && !(source instanceof HTMLVideoElement && source.readyState < source.HAVE_CURRENT_DATA);
+    // Static images upload once; video and canvases every frame.
+    if (ready && (entry.source !== source || !isStatic(source))) {
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, source);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+      gl.generateMipmap(gl.TEXTURE_2D);
+      entry.source = source;
+    }
+  }
+
   // --- events --------------------------------------------------------------
 
   private onPointer = (e: PointerEvent): void => {
@@ -930,6 +1005,7 @@ export class Rummy {
     this.sceneTargets = this.exposureTargets = this.glowTargets = null;
     this.lumaTarget = this.glyphTarget = null;
     this.atlasTex = this.shapesTex = this.sourceTex = null;
+    this.uniformTextures.clear();
     this.timer = null;
     this.init();
   };
