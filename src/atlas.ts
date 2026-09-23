@@ -19,6 +19,12 @@ export interface Atlas {
   cellHeight: number;
   /** n x 2 RGBA texels: [s0 s1 s2 s3] [s4 s5 mean 0], regions ordered row-major from top-left. */
   shapes: Float32Array;
+  /**
+   * How much ink a line-drawing glyph (/ \ |) puts in the regions it crosses,
+   * on the same normalized scale. Silhouette strokes are drawn at this level so
+   * they match line glyphs rather than heavier letters.
+   */
+  strokeInk: number;
 }
 
 export interface FontSpec {
@@ -118,5 +124,19 @@ export function buildAtlas(chars: string[], font: FontSpec): Atlas {
     shapes.set([s[4], s[5], mean, 0], (n + i) * 4);
   }
 
-  return { canvas, chars, columns, cellWidth: cw, cellHeight: ch, shapes };
+  // Calibrate strokes from the line glyphs this charset actually has: the mean
+  // of each one's inked regions (those above half its peak).
+  const lines = ['/', '\\', '|'].map((c) => chars.indexOf(c)).filter((i) => i >= 0);
+  let strokeInk = 0.35;
+  if (lines.length) {
+    const levels = lines.map((i) => {
+      const v = Array.from(raw.subarray(i * 6, i * 6 + 6), (x) => x * scale);
+      const peak = Math.max(...v);
+      const inked = v.filter((x) => x > peak / 2);
+      return inked.reduce((a, b) => a + b, 0) / inked.length;
+    });
+    strokeInk = levels.reduce((a, b) => a + b, 0) / levels.length;
+  }
+
+  return { canvas, chars, columns, cellWidth: cw, cellHeight: ch, shapes, strokeInk };
 }

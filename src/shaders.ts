@@ -179,6 +179,7 @@ uniform float uDirContrast; // contrast against neighbouring cells
 uniform float uEdges;       // silhouette strength 0..1
 uniform float uEdgeThreshold;
 uniform float uCellAspect;  // cell height / width
+uniform float uStrokeInk;   // coverage of a line glyph, on the shape-vector scale
 uniform vec3 uFg;
 uniform vec4 uBg;
 uniform float uColorMix;
@@ -186,7 +187,7 @@ uniform float uCellBg;      // two-tone strength 0..1
 uniform vec3 uPalette[32];  // OKLab
 uniform vec3 uPaletteRgb[32];
 uniform int uPaletteSize;
-uniform float uDither;
+uniform float uDither;     // amplitude, already scaled to the palette's spacing
 
 layout(location = 0) out vec4 outGlyph;
 layout(location = 1) out vec4 outCell;
@@ -310,18 +311,44 @@ void main() {
     g /= gd;
     vec2 n = length(g) > 1e-5 ? normalize(g) : vec2(0.0, 1.0);
     float mid = 0.5 * (dmin + dmax);
-    float nearSum = 0.0, farSum = 0.0, nearN = 0.0, farN = 0.0, nearPeak = 0.0;
+    float nearSum = 0.0, farSum = 0.0, nearN = 0.0, farN = 0.0;
     for (int i = 0; i < 6; i++) {
       float t = dot(P[i] - pm, n);
-      if (d[i] < mid) { nearSum += t; nearN += 1.0; nearPeak = max(nearPeak, s[i]); }
+      if (d[i] < mid) { nearSum += t; nearN += 1.0; }
       else { farSum += t; farN += 1.0; }
     }
-    float o = 0.5 * (nearSum / max(nearN, 1.0) + farSum / max(farN, 1.0));
-    float ink = mix(max(nearPeak, 0.35), 1.0, 0.5);
-    float k = uEdges * smoothstep(uEdgeThreshold, uEdgeThreshold * 2.0, range);
+    // Where the edge sits along n: halfway between the near and far samples,
+    // averaged with where the fitted plane crosses the depth midpoint. The
+    // first is robust, the second uses the fractional coverage anti-aliased
+    // samples carry; each alone doubles strokes or loses them on some slopes.
+    float split = 0.5 * (nearSum / max(nearN, 1.0) + farSum / max(farN, 1.0));
+    float fitted = length(g) > 1e-5 ? (mid - dm) / length(g) : split;
+    float o = 0.5 * (split + fitted);
+    // Strokes at the ink level of the font's own line glyphs: brighter targets
+    // match heavier letters instead of / \ |.
+    float ink = uStrokeInk;
+    // Full replacement from edges = 0.5 up: a silhouette cell mixed with its
+    // fill tone matches a heavier glyph than the stroke it should be.
+    float k = smoothstep(0.0, 0.5, uEdges) * smoothstep(uEdgeThreshold, uEdgeThreshold * 2.0, range);
+    // One cell per row draws a steep line (the one whose centre row it
+    // crosses), one cell per column a shallow one. The owner draws a steep
+    // stroke through its own centre, because / \ | are centred glyphs; a
+    // shallow stroke keeps its height, because _ and - sit at different heights.
+    // Neighbours clear their sliver of the line. Without this, a line near a
+    // cell boundary splits into slivers that match : and ' or off-centre
+    // strokes that match letters.
+    bool steep = abs(n.x) >= abs(n.y);
+    float at = steep ? o / n.x : o / n.y;
+    float extent = steep ? 0.5 : 0.5 * uCellAspect;
+    bool owner = abs(at) < extent;
     for (int i = 0; i < 6; i++) {
-      float t = (dot(P[i] - pm, n) - o) / 0.32;
-      s[i] = mix(s[i], ink * exp(-t * t), k);
+      float along = dot(P[i] - pm, n);
+      if (owner) {
+        float t = (steep ? along : along - o) / 0.32;
+        s[i] = mix(s[i], ink * exp(-t * t), k);
+      } else if (abs(along - o) < 0.45) {
+        s[i] *= 1.0 - k;
+      }
     }
   }
 
@@ -350,7 +377,7 @@ void main() {
   // the tone, and a dim tint would snap to the palette's black and vanish.
   float cpeak = max(max(color.r, color.g), color.b);
   vec3 tint = color / max(cpeak, uPaletteSize > 0 ? 1e-3 : 0.25);
-  float dither = (bayer4(cell) - 0.5) * uDither * 0.25;
+  float dither = (bayer4(cell) - 0.5) * uDither;  // uDither is pre-scaled to the palette's spacing
   vec3 fg = quantize(mix(uFg, tint, uColorMix), dither);
 
   vec3 bg = uBg.rgb;

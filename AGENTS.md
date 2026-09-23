@@ -15,7 +15,12 @@ Every change goes through a branch and a pull request. Nothing is committed to `
    - Visual change: `pnpm shots` and read `shots/current/sheet-*.png`. To see what
      you changed, save a baseline on `main` first (`pnpm shots --save-baseline`);
      later runs diff against it automatically.
-   - Per-frame cost: `pnpm bench` (real GPU, headless).
+   - Per-frame cost: `pnpm bench` (real GPU, headless). The `Bench` workflow runs it
+     on an M1 (GitHub's macos-14) when bench files change, or on demand.
+   - Engine behaviour: `pnpm measure` checks that silhouettes draw as strokes and that
+     auto-exposure holds still and settles. CI runs it too. Pipe build output
+     somewhere visible: a failed `pnpm build:demo` leaves the old site in place, and
+     everything after it quietly tests stale code.
    - Website: `pnpm web` serves it on http://localhost:4499 with hot reload, including
      edits to the library in `src/`. `pnpm web:check` runs svelte-check (warnings
      fail). `pnpm web:build && pnpm web:start` runs the production Node server on 4499.

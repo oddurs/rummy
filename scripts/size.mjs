@@ -44,6 +44,7 @@ const leaked = [
   ['blobs', 'float smin('],
   ['globe', 'halo'],
   ['palettes', '#0f380f'],
+  ['charset presets', 'ｦｱｳ'],
 ].filter(([, marker]) => code.includes(marker));
 
 console.log(`library (all scenes, palettes): ${kb(library)} gz  (budget ${kb(BUDGET.library)})`);

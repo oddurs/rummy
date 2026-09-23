@@ -1,0 +1,35 @@
+name: Bench
+
+# GPU time per pass on hardware we don't own. GitHub's macos-14 runners are
+# Apple M1 virtual machines with a paravirtualized Metal GPU: the numbers are
+# indicative of an M1, not a substitute for running /bench.html on a real one.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - demo/bench.*
+      - scripts/bench.mjs
+      - scripts/chrome.mjs
+      - .github/workflows/bench.yml
+
+jobs:
+  m1:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build:demo
+      - name: Bench on the runner's GPU
+        shell: bash  # -eo pipefail
+        run: |
+          node scripts/bench.mjs --seconds 4 --sizes 1920x1080 | tee bench.md
+          { echo '### Bench: macos-14 (Apple M1 VM)'; echo; cat bench.md; } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bench-m1
+          path: bench.md
