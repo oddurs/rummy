@@ -342,6 +342,122 @@ async function exposure(): Promise<{ steady: number[]; step: number[]; msPerFram
   return { steady, step, msPerFrame };
 }
 
+interface ChurnResult {
+  scene: string;
+  /** Share of cells that flip and flip back within three frames (A→B→A). */
+  flicker: number;
+  flickerPoints: number;
+  /** Share of cells changing per frame, real motion included. */
+  churn: number;
+  /** Share of cells differing from a fully refined still of the same moment. */
+  error: number;
+  errorPoints: number;
+}
+
+/**
+ * Motion quality: the default renderer stepped at 60 fps through each scene,
+ * beside one with point sampling (antialias 0), both compared with a fully
+ * refined still of the same moment. Flicker counts A→B→A flips ("boil");
+ * error is how far a moving frame strays from the ideal one.
+ */
+async function churn(frames = 90, extra: Partial<RummyOptions> = {}): Promise<ChurnResult[]> {
+  const make = (options: Partial<RummyOptions>) => {
+    const c = document.createElement('canvas');
+    c.style.cssText = 'position:fixed;left:0;top:0;width:640px;height:360px;';
+    document.body.append(c);
+    const r = new Rummy(c, { ...base, ...lookDefaults, ...looks.phosphor.options, fontSize: 10, ...options });
+    r.pause();
+    return { c, r };
+  };
+  const a = make(extra);
+  const points = make({ ...extra, antialias: 0 });
+  const truth = make({});
+  const cells = (x: string) => x.replace(/\n/g, '');
+  const differ = (x: string, y: string) => {
+    let n = 0;
+    for (let i = 0; i < x.length; i++) if (x[i] !== y[i]) n++;
+    return n / Math.max(x.length, 1);
+  };
+  const flips = (f: string[]) => {
+    let n = 0, total = 0;
+    for (let t = 2; t < f.length; t++) {
+      for (let i = 0; i < f[t].length; i++) {
+        total++;
+        if (f[t][i] === f[t - 2][i] && f[t][i] !== f[t - 1][i]) n++;
+      }
+    }
+    return n / Math.max(total, 1);
+  };
+  const mean = (v: number[]) => v.reduce((x, y) => x + y, 0) / Math.max(v.length, 1);
+
+  const results: ChurnResult[] = [];
+  for (const name of Object.keys(scenes) as SceneName[]) {
+    const start = Rummy.stillOf(scenes[name]);
+    for (const { r } of [a, points, truth]) {
+      r.set({ scene: scenes[name] });
+      r.resize();
+      r.time = start;
+    }
+    const fa: string[] = [], fp: string[] = [];
+    const errA: number[] = [], errP: number[] = [];
+    for (let f = 0; f < frames; f++) {
+      a.r.step(1 / 60);
+      points.r.step(1 / 60);
+      if (f < 10) continue; // warm-up
+      fa.push(cells(a.r.toText()));
+      fp.push(cells(points.r.toText()));
+      if (f % 10 === 0) {
+        truth.r.time = start + (f + 1) / 60;
+        for (let i = 0; i < 17; i++) truth.r.render();
+        const t = cells(truth.r.toText());
+        errA.push(differ(fa[fa.length - 1], t));
+        errP.push(differ(fp[fp.length - 1], t));
+      }
+    }
+    results.push({
+      scene: name,
+      flicker: flips(fa),
+      flickerPoints: flips(fp),
+      churn: mean(fa.slice(1).map((x, i) => differ(x, fa[i]))),
+      error: mean(errA),
+      errorPoints: mean(errP),
+    });
+  }
+  for (const { r, c } of [a, points, truth]) {
+    r.destroy();
+    c.remove();
+  }
+  return results;
+}
+
+/** Which glyph pairs flicker (A→B→A) in motion, most common first. For diagnosing boil. */
+async function flickerPairs(scene: SceneName, frames = 60): Promise<[string, number][]> {
+  const c = document.createElement('canvas');
+  c.style.cssText = 'position:fixed;left:0;top:0;width:640px;height:360px;';
+  document.body.append(c);
+  const r = new Rummy(c, { ...base, ...lookDefaults, ...looks.phosphor.options, fontSize: 10, scene: scenes[scene] });
+  r.pause();
+  r.resize();
+  r.time = Rummy.stillOf(scenes[scene]);
+  const f: string[] = [];
+  for (let i = 0; i < frames; i++) {
+    r.step(1 / 60);
+    if (i >= 10) f.push(r.toText().replace(/\n/g, ''));
+  }
+  r.destroy();
+  c.remove();
+  const pairs = new Map<string, number>();
+  for (let t = 2; t < f.length; t++) {
+    for (let i = 0; i < f[t].length; i++) {
+      if (f[t][i] === f[t - 2][i] && f[t][i] !== f[t - 1][i]) {
+        const k = [f[t][i], f[t - 1][i]].sort().join('');
+        pairs.set(k, (pairs.get(k) ?? 0) + 1);
+      }
+    }
+  }
+  return [...pairs].sort((x, y) => y[1] - x[1]).slice(0, 25);
+}
+
 /** Shape vectors for some glyphs, for debugging the matcher. */
 function glyphShapes(glyphs: string, fontSize = 12): { strokeInk: number; shapes: Record<string, number[]> } {
   const atlas = buildAtlas(normalizeCharset(charsets.ascii), {
@@ -354,9 +470,9 @@ function glyphShapes(glyphs: string, fontSize = 12): { strokeInk: number; shapes
   const shapes: Record<string, number[]> = {};
   for (const g of glyphs) {
     const i = atlas.chars.indexOf(g);
-    const a = atlas.shapes.subarray(i * 4, i * 4 + 4);
-    const b = atlas.shapes.subarray((n + i) * 4, (n + i) * 4 + 2);
-    shapes[g] = [...a, ...b].map((v) => Math.round(v * 100) / 100);
+    const va = atlas.shapes.subarray(i * 4, i * 4 + 4);
+    const vb = atlas.shapes.subarray((n + i) * 4, (n + i) * 4 + 2);
+    shapes[g] = [...va, ...vb].map((v) => Math.round(v * 100) / 100);
   }
   return { strokeInk: atlas.strokeInk, shapes };
 }
@@ -372,12 +488,25 @@ declare global {
       silhouettes: typeof silhouettes;
       exposure: typeof exposure;
       glyphShapes: typeof glyphShapes;
+      churn: typeof churn;
+      flickerPairs: typeof flickerPairs;
     };
   }
 }
 
 const readyPromise = ready();
-window.__shots = { ready: readyPromise, list: shots.map((s) => s.name), render, diff, montage, silhouettes, exposure, glyphShapes };
+window.__shots = {
+  ready: readyPromise,
+  list: shots.map((s) => s.name),
+  render,
+  diff,
+  montage,
+  silhouettes,
+  exposure,
+  glyphShapes,
+  churn,
+  flickerPairs,
+};
 
 // Headless runs drive the page themselves; people get the sheet.
 if (!navigator.webdriver && !new URLSearchParams(location.search).has('driven')) {

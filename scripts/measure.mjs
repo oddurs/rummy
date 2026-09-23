@@ -3,6 +3,7 @@
  * Measurements behind v0.2's acceptance criteria, as regression checks:
  *
  *   silhouettes  straight outlines draw as strokes (/ \ | _ - ' .), not letters
+ *   motion       no boil (A→B→A flicker) and no lag against point sampling
  *   exposure     auto-exposure holds still on a steady source and settles
  *                after a cut without overshooting
  *
@@ -50,6 +51,20 @@ check(s.slashes > s.letters, 'steep diagonals draw as / and \\ more often than a
 check(s.slashes > sil.spike.noEdges.slashes, 'directional edges draw more slashes than no edges');
 const d = sil.diamond.edges;
 check(d.letters < (d.slashes + d.strokes + d.other) / 2, '45° outlines are mostly strokes and punctuation, not letters');
+
+// --- glyph boil --------------------------------------------------------------------
+const churn = await chrome.evaluate('window.__shots.churn()');
+console.log('\nmotion at 60 fps: default vs point sampling (antialias 0), against a refined still');
+console.log('  scene     flicker (A→B→A)       error vs ideal          churn');
+const pct = (v) => `${(v * 100).toFixed(2)}%`;
+for (const c of churn) {
+  console.log(
+    `  ${c.scene.padEnd(9)} ${pct(c.flicker).padStart(6)} (points ${pct(c.flickerPoints).padEnd(6)})   ${pct(c.error).padStart(6)} (points ${pct(c.errorPoints).padEnd(6)})   ${pct(c.churn)}`,
+  );
+}
+check(churn.every((c) => c.flicker < 0.005), 'no boil: under 0.5% of cells flicker (A→B→A) in any scene');
+const worst = Math.max(...churn.map((c) => c.error - c.errorPoints));
+check(worst < 0.015, `temporal smoothing costs < 1.5 points of accuracy against point sampling (worst ${pct(worst)})`);
 
 // --- exposure --------------------------------------------------------------------
 const exp = await chrome.evaluate('window.__shots.exposure()');

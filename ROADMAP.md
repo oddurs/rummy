@@ -103,8 +103,11 @@ Motion that looks intentional. No glyph boil, transitions between scenes, scroll
 
 ### planned
 
-- [ ] [`0018`](https://github.com/oddurs/rummy/blob/main/cairn/items/0018-stop-glyph-boil-with-temporal-hysteresis.md) Stop glyph boil with temporal hysteresis <sup>look · p0 · motion</sup>
 - [ ] [`0020`](https://github.com/oddurs/rummy/blob/main/cairn/items/0020-custom-uniforms-settable-live.md) Custom uniforms, settable live <sup>feature · p0 · content</sup>
+
+### in review
+
+- [ ] [`0018`](https://github.com/oddurs/rummy/blob/main/cairn/items/0018-stop-glyph-boil-with-temporal-hysteresis.md) Stop glyph boil with temporal hysteresis <sup>look · p0 · motion</sup>
 
 ### shipped
 
@@ -131,7 +134,7 @@ Anyone's content, not just ours. Their logo in 3D, their three.js scene without 
 
 ## v0.5 — Drop-in
 
-`··········` 0% · 0 of 6 done · due 2027-01-12
+`··········` 0% · 0 of 7 done · due 2027-01-12
 
 One tag on any site. npm, a CDN build, a web component, a React wrapper, a fallback for browsers without WebGL2, and copy that stays readable over the effect.
 
@@ -141,6 +144,7 @@ One tag on any site. npm, a CDN build, a web component, a React wrapper, a fallb
 - [ ] [`0036`](https://github.com/oddurs/rummy/blob/main/cairn/items/0036-keep-copy-readable-fade-the-effect-behind-chosen-elements.md) Keep copy readable: fade the effect behind chosen elements <sup>feature · p1 · reach</sup>
 - [ ] [`0037`](https://github.com/oddurs/rummy/blob/main/cairn/items/0037-a-fallback-without-webgl2-and-ssr-safe-imports.md) A fallback without WebGL2, and SSR-safe imports <sup>feature · p1 · reach</sup>
 - [ ] [`0038`](https://github.com/oddurs/rummy/blob/main/cairn/items/0038-accessibility-audit-including-a-way-to-stop-the-motion.md) Accessibility audit, including a way to stop the motion <sup>chore · p1 · reach</sup>
+- [ ] [`0054`](https://github.com/oddurs/rummy/blob/main/cairn/items/0054-deploy-the-website-to-railway.md) Deploy the website to Railway <sup>chore · p1 · reach</sup>
 
 ### planned
 

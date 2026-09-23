@@ -82,9 +82,9 @@ export interface RummyOptions {
   edges: number;
   edgeThreshold: number;
   /**
-   * Temporal anti-aliasing, 0..1: each frame samples a jittered point inside
-   * every region and blends into the history. Still frames refine over 16
-   * frames. 0 = one point sample per region, as before.
+   * Temporal anti-aliasing, 0..1. Still frames refine over 16 jittered frames.
+   * In motion there is no jitter (it made sub-cell detail flicker) and this sets
+   * how much of the last frame is kept. 0 = one point sample per region.
    */
   antialias: number;
   /** Supersampling per region: 1 (fast) or 2 (smoother). */
@@ -231,6 +231,7 @@ export class Rummy {
   private exposureTargets: [Target, Target] | null = null;
   private exposureIndex = 0;
   private glyphTarget: Target | null = null;
+  private stepping = false;
   private glowTargets: [Target, Target] | null = null;
   private atlas: Atlas | null = null;
   private atlasTex: WebGLTexture | null = null;
@@ -381,6 +382,20 @@ export class Rummy {
   }
 
   /**
+   * Advance the clock by `seconds` and render one frame exactly as the running
+   * loop would, with motion's temporal behaviour. For recording
+   * frames and for tests that need identical timing across instances.
+   */
+  step(seconds = 1 / 60): void {
+    if (this.lost || this.destroyed || !this.atlas) return;
+    this.stepping = true;
+    this.dt = seconds;
+    this.clock += seconds;
+    this.draw();
+    this.stepping = false;
+  }
+
+  /**
    * The last rendered frame as text: one line per row, top first, including
    * the partly visible bottom row. Reads back the glyph grid (a few thousand
    * cells, not the canvas), so it is cheap enough to call on demand.
@@ -448,8 +463,8 @@ export class Rummy {
       ...(this.sceneTargets ?? []),
       ...(this.exposureTargets ?? []),
       ...(this.glowTargets ?? []),
-      this.lumaTarget,
       this.glyphTarget,
+      this.lumaTarget,
     ]) {
       deleteTarget(gl, t);
     }
@@ -632,7 +647,7 @@ export class Rummy {
   }
 
   private get moving(): boolean {
-    return this.animating || this.sourceIsLive();
+    return this.animating || this.stepping || this.sourceIsLive();
   }
 
   private get refining(): boolean {
@@ -725,8 +740,12 @@ export class Rummy {
     this.sceneIndex = 1 - this.sceneIndex;
     const aa = Math.max(0, Math.min(1, o.antialias));
     const first = this.accumFrame === 0 || aa === 0;
-    const blend = first ? 1 : this.moving ? 1 - 0.65 * aa : 1 / (Math.min(this.accumFrame, REFINE_FRAMES) + 1);
-    const [jx, jy] = aa > 0 ? jitter(this.accumFrame % 64) : [0, 0];
+    // Stills refine: jittered samples averaged over 16 frames. In motion there
+    // is no jitter, and only a little history. Measured (pnpm measure): jitter in
+    // motion made sub-cell features flip between regions frame to frame, which
+    // was most of the glyph "boil", and left frames further from the ideal.
+    const blend = first ? 1 : this.moving ? 1 - 0.25 * aa : 1 / (Math.min(this.accumFrame, REFINE_FRAMES) + 1);
+    const [jx, jy] = aa > 0 && !this.moving ? jitter(this.accumFrame % 64) : [0, 0];
     this.accumFrame++;
 
     const glow = o.glow > 0;

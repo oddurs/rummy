@@ -219,6 +219,15 @@ vec3 quantize(vec3 c, float dither) {
   return uPaletteRgb[best];
 }
 
+float glyphDistance(int k, vec4 a, vec2 b, float mean) {
+  vec4 ka = texelFetch(uShapes, ivec2(k, 0), 0);
+  vec4 kb = texelFetch(uShapes, ivec2(k, 1), 0);
+  if (uMode == 1) return abs(kb.z - mean);
+  vec4 da = ka - a;
+  vec2 db = kb.xy - b;
+  return dot(da, da) + dot(db, db);
+}
+
 float bayer4(ivec2 p) {
   int x = p.x & 3, y = p.y & 3;
   int m[16] = int[16](0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5);
@@ -359,16 +368,7 @@ void main() {
   int best = 0;
   float bestDist = 1e9;
   for (int k = 0; k < uCount; k++) {
-    vec4 ka = texelFetch(uShapes, ivec2(k, 0), 0);
-    vec4 kb = texelFetch(uShapes, ivec2(k, 1), 0);
-    float dist;
-    if (uMode == 0) {
-      vec4 da = ka - a;
-      vec2 db = kb.xy - b;
-      dist = dot(da, da) + dot(db, db);
-    } else {
-      dist = abs(kb.z - mean);
-    }
+    float dist = glyphDistance(k, a, b, mean);
     if (dist < bestDist) { bestDist = dist; best = k; }
   }
 
