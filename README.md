@@ -9,11 +9,13 @@ terminal with a GPU in it. It is small (one ES module, zero dependencies) and ch
 shades one sample per *character region*, not per pixel, so a full-screen hero costs about
 as much as a thumbnail.
 
-**[Live demo →](https://oddurs.github.io/rummy/)** (drag an image or video onto it)
+**[Live demo →](https://oddurs.github.io/rummy/)** (drag an image or video onto it) ·
+**[Contact sheet →](https://oddurs.github.io/rummy/shots.html)** (every scene in every look) ·
+**[Bench →](https://oddurs.github.io/rummy/bench.html)** (GPU time on your machine)
 
-| | |
-|---|---|
-| ![Terrain flyover under a striped sun, amber](docs/img/terrain.png) | ![Rotating wireframe globe, green phosphor](docs/img/globe.png) |
+| | | |
+|---|---|---|
+| ![A gridded valley running toward a striped sun, in amber](docs/img/terrain.png) | ![A rotating globe with continents and a graticule, green phosphor](docs/img/globe.png) | ![A wireframe tunnel through a curved CRT screen with glow](docs/img/crt.png) |
 
 ## Why another ASCII shader
 
@@ -32,10 +34,22 @@ rummy does two things differently:
    and silhouettes look drawn rather than dithered. This is the technique from
    [Alex Harri's deep dive](https://alexharri.com/blog/ascii-rendering), run on the GPU.
 
-Then it adds depth-aware silhouettes, contrast enhancement against neighbouring cells, any
-charset (ASCII, box drawing, blocks, katakana), any font, and the boring things a
-background needs: pausing off screen, `prefers-reduced-motion`, DPR caps, context-loss
-recovery.
+On top of that, everything that makes it look like a screen rather than a filter, all
+computed at cell resolution so it stays nearly free:
+
+- **Silhouettes with direction.** Depth edges become a stroke along the edge's actual
+  angle and position, so outlines draw as `/ \ | _` instead of blotches.
+- **Temporal anti-aliasing.** Each frame samples a jittered point inside every region
+  and folds it into a history; thin lines stop crawling, and still frames refine to
+  the quality of 4× supersampling.
+- **Phosphor glow**, blurred over the cell grid rather than millions of pixels.
+- **Two-tone cells**: a background colour per cell, like a real terminal.
+- **Palettes** (ANSI, CGA, EGA, C64, Game Boy, phosphors) with ordered dithering.
+- **Auto-exposure** for images and video, with no GPU→CPU readback.
+- **An opt-in CRT**: curvature, vignette, aperture mask, chromatic fringe, flicker.
+
+And the boring things a background needs: pausing off screen, `prefers-reduced-motion`,
+DPR caps, context-loss recovery, any charset, any font.
 
 ## Quick start
 
@@ -93,6 +107,12 @@ Available in scenes: `uTime`, `uMouse` (−1..1, smoothed), `uAspect`, `uResolut
 (2D and 3D). Depth only matters for the `edges` silhouette effect; return a constant if
 you don't care.
 
+A scene can declare its best moment with `#define STILL 4.0` at the top. rummy starts
+there, and it's the frame shown to visitors who prefer reduced motion.
+
+Raymarching tip: avoid `fwidth()` after a loop that `break`s or an early `return`.
+Derivatives in non-uniform control flow are undefined, and some GPUs return 0.
+
 Built-in scenes: `ring`, `terrain`, `blobs`, `globe`, `tunnel`.
 
 ## Options
@@ -110,60 +130,89 @@ All options are optional and can be changed later with `rummy.set()`.
 | `mode` | `'shape'` | `'shape'` matches glyph silhouettes, `'density'` is a classic ramp |
 | `fg` / `bg` | `#9dffb0` / `#050805` | Any CSS colour; `bg: 'transparent'` to layer over content |
 | `colorMix` | `0` | 0 = monochrome `fg`, 1 = scene colour |
+| `palette` | `null` | Quantize colours to a palette, e.g. `palettes.cga` (up to 32 colours) |
+| `dither` | `0.5` | Ordered dither across cells when quantizing |
+| `cellBackground` | `0` | Two-tone cells: the darker part of each cell becomes its background |
 | `gain` / `gamma` | `0.85` / `1.15` | Tone curve before glyph matching |
+| `exposure` | `'source'` | A multiplier, `'auto'`, or `'source'` (auto for images and video, 1 for GLSL) |
 | `contrast` | `1.6` | Sharpens shape inside a cell (1 = off) |
 | `directionalContrast` | `2` | Sharpens against neighbouring cells (1 = off) |
-| `edges` | `0.5` | Depth-silhouette strength, 0..1 |
-| `quality` | `1` | `2` supersamples each region 2×2 |
-| `offset` | `[0, 0]` | Shift the focal point, e.g. to sit beside your headline |
+| `edges` | `0.6` | Directional silhouette strength, 0..1 |
+| `antialias` | `0.6` | Temporal anti-aliasing, 0..1 (0 = one point sample per region) |
+| `quality` | `1` | `2` supersamples each region 2×2 (4× scene cost) |
+| `glow` / `glowRadius` | `0` / `2.5` | Phosphor glow strength, and its radius in cells |
+| `crt` | `false` | `true` for a preset, or `{ curvature, vignette, mask, fringe, flicker }` |
 | `scanlines` | `0` | Darken alternate pixel rows |
+| `offset` | `[0, 0]` | Shift the focal point, e.g. to sit beside your headline |
 | `maxFps` | `0` | Cap frame rate (0 = display rate) |
 | `maxDpr` | `2` | Device pixel ratio cap |
 | `timeScale` | `1` | |
 | `mouse` | `true` | Feed the pointer to `uMouse` |
 | `pauseOffscreen` | `true` | Stop when scrolled out of view |
-| `respectReducedMotion` | `true` | Render a still frame under `prefers-reduced-motion` |
+| `respectReducedMotion` | `true` | Hold the scene's still frame under `prefers-reduced-motion` |
+| `profile` | `false` | Measure GPU time per pass into `stats.gpu` |
 
-Methods: `set(options)`, `play()`, `pause()`, `render()`, `destroy()`.
-Read-only: `stats` (`columns`, `rows`, `samples`, `width`, `height`, `fps`), `options`.
+Methods: `set(options)`, `play()`, `pause()`, `render()`, `resize()`, `destroy()`.
+Properties: `time` (get/set, seconds), `stats` (`columns`, `rows`, `samples`, `width`,
+`height`, `fps`, `gpu`), `options`. Static: `Rummy.stillOf(scene)`.
 
 ## How it works
 
 ```
- scene pass            glyph pass               composite pass
- cols*2 x rows*3  ──►  cols x rows         ──►  full resolution
- your GLSL,            6 samples → contrast     cell → glyph index →
- rgb + depth           → nearest shape vector   atlas texel → colour
+ scene            exposure        glyph                glow           composite
+ cols*2 x rows*3  (auto only)     cols x rows          cols x rows    full resolution
+ your GLSL,  ──►  cell luma  ──►  6 samples →     ──►  blur the  ──►  glyph atlas,
+ jittered,        → mips → 1x1    contrast, edges,     cells' light   glow, CRT
+ accumulated                      nearest glyph,
+                                  colour, palette
 ```
 
-Three fullscreen-triangle draws, no vertex buffers, no readbacks. The composite pass is
-two `texelFetch`es per pixel. Details, prior art and design notes are in
-[docs/how-it-works.md](docs/how-it-works.md).
+Fullscreen-triangle draws with no vertex buffers and no readbacks. Only the last pass
+touches every pixel, and it does two `texelFetch`es. Details, prior art and design
+notes are in [docs/how-it-works.md](docs/how-it-works.md).
+
+### What it costs
+
+GPU time per frame at 1920×1080 (12px text, phosphor look with glow), measured with
+timer queries on an Apple M4 via `pnpm bench`:
+
+| scene | scene pass | glyph | glow | composite | **total** |
+|---|---:|---:|---:|---:|---:|
+| ring | 0.26 ms | 0.29 | 0.11 | 0.60 | **1.25 ms** |
+| terrain | 0.86 ms | 0.30 | 0.05 | 0.52 | **1.73 ms** |
+| blobs | 0.86 ms | 0.25 | 0.17 | 0.28 | **1.55 ms** |
+| globe | 0.26 ms | 0.35 | 0.23 | 0.46 | **1.30 ms** |
+| tunnel | 0.23 ms | 0.30 | 0.07 | 0.38 | **0.98 ms** |
+
+Per-pass numbers are noisy to about ±0.2 ms; totals are steadier. Other devices are on
+[the roadmap](ROADMAP.md). Run `/bench.html` on yours.
 
 ## Status
 
-Early (v0.1). The engine, five scenes and the demo work; the API may still change before
+Early (v0.2). The engine, five scenes and the demo work; the API may still change before
 1.0. Not yet on npm.
 
 ## Roadmap
 
-- [ ] Publish to npm
-- [ ] three.js / R3F adapter that shares the WebGL context (no canvas copy)
-- [ ] Phosphor persistence: cheap per-cell trails at cell resolution
-- [ ] Per-cell glyph animation (decode/"matrix rain" transitions between frames)
-- [ ] More scenes, plus a scene gallery
-- [ ] WebGPU backend
-- [ ] Screen-reader-friendly text mode (render to real DOM text for small grids)
+[ROADMAP.md](ROADMAP.md), generated from the items in `cairn/items/` by
+[cairn](https://github.com/oddurs/cairn). Next up: glyph stability in motion, transitions
+and scroll (v0.3), your logo in 3D and a three.js adapter (v0.4), a one-tag web component
+(v0.5).
 
 ## Development
 
 ```sh
 pnpm install
-pnpm dev          # demo at http://localhost:5173
-pnpm check        # typecheck + library build + demo build
+pnpm dev          # demo at http://localhost:5173 (/shots.html, /bench.html too)
+pnpm check        # typecheck, library build, size gate, demo build
+pnpm shots        # render the contact sheet to shots/current, diff against shots/baseline
+pnpm bench        # GPU time per pass on this machine's real GPU
 ```
 
-`src/` is the library, `demo/` is the site deployed to GitHub Pages.
+`src/` is the library, `demo/` is the site deployed to GitHub Pages, `scripts/` holds the
+screenshot harness, bench driver and size gate. They drive headless Chrome over the
+DevTools protocol with no npm dependencies. Visual changes show up in CI as a
+before/after contact sheet on every pull request.
 
 ## License
 

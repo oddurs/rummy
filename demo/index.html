@@ -46,13 +46,16 @@
         <label>mode
           <select name="mode"><option>shape</option><option>density</option></select>
         </label>
-        <label>palette
-          <select name="palette">
-            <option value="phosphor">phosphor</option>
-            <option value="amber">amber</option>
-            <option value="paper">paper</option>
-            <option value="ice">ice</option>
-            <option value="scene">scene colour</option>
+        <label>look
+          <select name="look">
+            <option>phosphor</option><option>amber</option><option>paper</option><option>ice</option>
+            <option value="scene">scene colour</option><option>cga</option><option>crt</option>
+          </select>
+        </label>
+        <label>quantize
+          <select name="quantize">
+            <option>none</option><option>ansi16</option><option>cga</option><option>ega</option>
+            <option>gameboy</option><option>c64</option><option>phosphorGreen</option><option>phosphorAmber</option>
           </select>
         </label>
         <label>font size <output name="fontSizeOut"></output>
@@ -70,9 +73,16 @@
         <label>gain <output name="gainOut"></output>
           <input type="range" name="gain" min="0.3" max="3" step="0.01" />
         </label>
-        <label>scanlines <output name="scanlinesOut"></output>
-          <input type="range" name="scanlines" min="0" max="0.8" step="0.01" />
+        <label>glow <output name="glowOut"></output>
+          <input type="range" name="glow" min="0" max="1" step="0.01" />
         </label>
+        <label>two-tone cells <output name="cellBackgroundOut"></output>
+          <input type="range" name="cellBackground" min="0" max="1" step="0.01" />
+        </label>
+        <label>antialias <output name="antialiasOut"></output>
+          <input type="range" name="antialias" min="0" max="1" step="0.01" />
+        </label>
+        <label class="check"><input type="checkbox" name="crt" /> crt</label>
         <label class="check"><input type="checkbox" name="quality" /> 2x supersample</label>
         <label class="check"><input type="checkbox" name="paused" /> paused</label>
         <p class="hint">drop an image or video anywhere to asciify it</p>

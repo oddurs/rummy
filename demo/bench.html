@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>rummy — bench</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet" />
+    <style>
+      :root { color-scheme: dark; }
+      body { margin: 0; padding: 24px 16px; background: #0b0b0c; color: #cfcfd4; font: 13px/1.5 'JetBrains Mono', ui-monospace, monospace; }
+      h1 { font-size: 14px; font-weight: 500; margin: 0 0 8px; }
+      button { font: inherit; background: #9dffb0; color: #050805; border: 0; padding: 6px 12px; cursor: pointer; }
+      pre { white-space: pre-wrap; background: #111114; padding: 12px; border: 1px solid #222; overflow-x: auto; }
+      #stage { position: fixed; right: 0; bottom: 0; width: 1920px; height: 1080px; opacity: 0.35; pointer-events: none; z-index: -1; }
+    </style>
+  </head>
+  <body>
+    <h1>rummy bench</h1>
+    <p>Renders every built-in scene at 1080p for a few seconds and reports GPU time per pass. Keep this tab in front while it runs.</p>
+    <button id="run">run</button>
+    <pre id="out">idle</pre>
+    <canvas id="stage"></canvas>
+    <script type="module" src="./bench.ts"></script>
+  </body>
+</html>

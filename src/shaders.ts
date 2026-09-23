@@ -26,6 +26,9 @@ uniform vec2 uResolution;  // scene target size in samples
 uniform vec2 uOffset;      // focal point shift in screen() units
 uniform sampler2D uSource;
 uniform vec2 uSourceScale;
+uniform sampler2D uPrev;   // last frame's accumulated samples
+uniform float uBlend;      // weight of this frame's sample (1 = no history)
+uniform vec2 uJitter;      // sub-sample offset, in samples
 
 in vec2 vUv;
 out vec4 outColor;
@@ -72,8 +75,17 @@ float fbm(vec3 p) {
 }
 `;
 
+/**
+ * Each frame samples at a jittered position inside the region and folds into
+ * the running average, so thin features integrate over the region instead of
+ * aliasing on a single point sample.
+ */
 export const SCENE_MAIN = /* glsl */ `
-void main() { outColor = clamp(scene(vUv), 0.0, 1.0); }
+void main() {
+  vec4 c = clamp(scene(vUv + uJitter / uResolution), 0.0, 1.0);
+  if (uBlend < 1.0) c = mix(texelFetch(uPrev, ivec2(gl_FragCoord.xy), 0), c, uBlend);
+  outColor = c;
+}
 `;
 
 /** Built-in scene used when `scene` is an image, video or canvas. */
@@ -84,28 +96,10 @@ vec4 scene(vec2 uv) {
 }
 `;
 
-/**
- * Glyph pass: one fragment per character cell.
- * Reads the 2x3 scene samples, enhances contrast, picks the nearest glyph.
- * Output: r = glyph index / 255, gba = cell color.
- */
-export const GLYPH_FS = /* glsl */ `#version 300 es
-precision highp float;
-precision highp int;
-
+/** Region fetch shared by the passes that read the scene target. */
+const REGION = /* glsl */ `
 uniform sampler2D uScene;
-uniform sampler2D uShapes;
-uniform int uCount;
 uniform int uQuality;
-uniform int uMode;          // 0 = shape match, 1 = density ramp
-uniform float uGain;
-uniform float uGamma;
-uniform float uContrast;    // within-cell contrast exponent
-uniform float uDirContrast; // contrast against neighbouring cells
-uniform float uEdges;       // depth-silhouette strength 0..1
-uniform float uEdgeThreshold;
-
-out vec4 outColor;
 
 float luma(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
 
@@ -118,39 +112,166 @@ vec4 region(ivec2 p) {
     for (int x = 0; x < uQuality; x++) acc += texelFetch(uScene, p + ivec2(x, y), 0);
   return acc / float(uQuality * uQuality);
 }
+`;
 
-float level(vec3 c) { return pow(clamp(luma(c) * uGain, 0.0, 1.0), uGamma); }
+/** Per-cell luminance mean and mean square, mipmapped down to one texel. */
+export const LUMA_FS = /* glsl */ `#version 300 es
+precision highp float;
+precision highp int;
+${REGION}
+out vec4 outColor;
+void main() {
+  ivec2 base = ivec2(gl_FragCoord.xy) * ivec2(2, 3);
+  float m = 0.0, q = 0.0;
+  for (int i = 0; i < 6; i++) {
+    float l = luma(region(base + ivec2(i & 1, i >> 1)).rgb);
+    m += l;
+    q += l * l;
+  }
+  outColor = vec4(m / 6.0, q / 6.0, 0.0, 1.0);
+}`;
+
+/**
+ * Exposure: a 1x1 target holding log2(exposure), eased toward a value that puts
+ * the bright end of the frame (mean + 2 sigma) at 85% ink.
+ */
+export const EXPOSURE_FS = /* glsl */ `#version 300 es
+precision highp float;
+precision highp int;
+uniform sampler2D uLuma;
+uniform int uLumaLevel;
+uniform sampler2D uPrevExposure;
+uniform float uRate;
+out vec4 outColor;
+void main() {
+  vec4 s = texelFetch(uLuma, ivec2(0), uLumaLevel);
+  float m = s.x;
+  float sd = sqrt(max(s.y - m * m, 0.0));
+  float white = clamp(m + 2.0 * sd, 0.04, 1.0);
+  float target = log2(clamp(0.85 / white, 0.5, 4.0));
+  float prev = texelFetch(uPrevExposure, ivec2(0), 0).r * 3.0 - 1.0;
+  outColor = vec4((mix(prev, target, uRate) + 1.0) / 3.0, 0.0, 0.0, 1.0);
+}`;
+
+/**
+ * Glyph pass: one fragment per character cell.
+ *
+ *   out 0: r = glyph index / 255, gba = glyph colour
+ *   out 1: rgb = cell background, a = background alpha
+ *
+ * Colour is resolved here, once per cell, so palettes and dithering cost
+ * nothing per pixel.
+ */
+export const GLYPH_FS = /* glsl */ `#version 300 es
+precision highp float;
+precision highp int;
+${REGION}
+uniform sampler2D uShapes;
+uniform sampler2D uExposureTex;
+uniform int uAutoExposure;
+uniform float uExposure;
+uniform int uCount;
+uniform int uMode;          // 0 = shape match, 1 = density ramp
+uniform float uGain;
+uniform float uGamma;
+uniform float uContrast;    // within-cell contrast exponent
+uniform float uDirContrast; // contrast against neighbouring cells
+uniform float uEdges;       // silhouette strength 0..1
+uniform float uEdgeThreshold;
+uniform float uCellAspect;  // cell height / width
+uniform vec3 uFg;
+uniform vec4 uBg;
+uniform float uColorMix;
+uniform float uCellBg;      // two-tone strength 0..1
+uniform vec3 uPalette[32];  // OKLab
+uniform vec3 uPaletteRgb[32];
+uniform int uPaletteSize;
+uniform float uDither;
+
+layout(location = 0) out vec4 outGlyph;
+layout(location = 1) out vec4 outCell;
+
+vec3 toLinear(vec3 c) { return pow(c, vec3(2.2)); }
+
+vec3 oklab(vec3 c) {
+  c = toLinear(c);
+  vec3 lms = mat3(0.4122214708, 0.2119034982, 0.0883024619,
+                  0.5363325363, 0.6806995451, 0.2817188376,
+                  0.0514459929, 0.1073969566, 0.6299787005) * c;
+  lms = pow(max(lms, 0.0), vec3(1.0 / 3.0));
+  return mat3(0.2104542553, 1.9779984951, 0.0259040371,
+              0.7936177850, -2.4285922050, 0.7827717662,
+              -0.0040720468, 0.4505937099, -0.8086757660) * lms;
+}
+
+vec3 quantize(vec3 c, float dither) {
+  if (uPaletteSize == 0) return c;
+  vec3 lab = oklab(clamp(c + dither, 0.0, 1.0));
+  int best = 0;
+  float bd = 1e9;
+  for (int i = 0; i < 32; i++) {
+    if (i >= uPaletteSize) break;
+    vec3 d = uPalette[i] - lab;
+    float dist = dot(d, d);
+    if (dist < bd) { bd = dist; best = i; }
+  }
+  return uPaletteRgb[best];
+}
+
+float bayer4(ivec2 p) {
+  int x = p.x & 3, y = p.y & 3;
+  int m[16] = int[16](0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5);
+  return (float(m[y * 4 + x]) + 0.5) / 16.0;
+}
 
 void main() {
   ivec2 cell = ivec2(gl_FragCoord.xy);
   ivec2 base = cell * ivec2(2, 3);
-  float s[6];
-  float e[6];
+  float gain = uGain * (uAutoExposure == 1 ? exp2(texelFetch(uExposureTex, ivec2(0), 0).r * 3.0 - 1.0) : uExposure);
+
+  float l[6];
   float d[6];
+  float e[6];
+  vec3 c[6];
   vec3 color = vec3(0.0);
-  float dmin = 1.0, dmax = 0.0;
+  float dmin = 1.0, dmax = 0.0, lmean = 0.0;
 
   for (int i = 0; i < 6; i++) {
     int cx = i & 1;       // 0 left, 1 right
     int ry = i >> 1;      // 0 top .. 2 bottom
     ivec2 p = base + ivec2(cx, 2 - ry);
     vec4 v = region(p);
-    s[i] = level(v.rgb);
+    c[i] = v.rgb;
+    l[i] = clamp(luma(v.rgb) * gain, 0.0, 1.0);
     d[i] = v.a;
     color += v.rgb;
+    lmean += l[i];
     dmin = min(dmin, v.a);
     dmax = max(dmax, v.a);
     // Outward neighbour: sideways for the middle row, diagonal for corners.
     ivec2 dir = ivec2(cx == 0 ? -1 : 1, ry == 0 ? 1 : (ry == 2 ? -1 : 0));
-    e[i] = level(region(p + dir).rgb);
+    e[i] = clamp(luma(region(p + dir).rgb) * gain, 0.0, 1.0);
   }
   color /= 6.0;
+  lmean /= 6.0;
 
-  // Depth discontinuity inside the cell: carve a silhouette.
-  if (uEdges > 0.0 && dmax - dmin > uEdgeThreshold) {
-    float mid = 0.5 * (dmin + dmax);
-    for (int i = 0; i < 6; i++)
-      s[i] = d[i] < mid ? mix(s[i], 1.0, uEdges) : s[i] * (1.0 - uEdges);
+  // Two-tone: the darker samples become the cell's background; the glyph
+  // draws whatever rises above it.
+  float lb = 0.0;
+  vec3 paper = vec3(0.0);
+  if (uCellBg > 0.0) {
+    float n = 0.0;
+    for (int i = 0; i < 6; i++) if (l[i] <= lmean + 1e-4) { paper += c[i]; n += 1.0; }
+    paper /= max(n, 1.0);
+    lb = clamp(luma(paper) * gain, 0.0, 1.0) * uCellBg;
+  }
+
+  float s[6];
+  for (int i = 0; i < 6; i++) {
+    float t = max(l[i] - lb, 0.0) / max(1.0 - lb, 1e-3);
+    s[i] = pow(t, uGamma);
+    float te = max(e[i] - lb, 0.0) / max(1.0 - lb, 1e-3);
+    e[i] = pow(te, uGamma);
   }
 
   // Directional contrast: darken regions that sit next to something brighter.
@@ -162,9 +283,47 @@ void main() {
   }
 
   // Global contrast inside the cell: sharpens the shape the glyph must match.
-  float m = max(max(max(s[0], s[1]), max(s[2], s[3])), max(s[4], s[5]));
-  if (m > 0.0 && uContrast != 1.0)
-    for (int i = 0; i < 6; i++) s[i] = pow(s[i] / m, uContrast) * m;
+  float peak = max(max(max(s[0], s[1]), max(s[2], s[3])), max(s[4], s[5]));
+  if (peak > 0.0 && uContrast != 1.0)
+    for (int i = 0; i < 6; i++) s[i] = pow(s[i] / peak, uContrast) * peak;
+
+  // Silhouettes: where the cell straddles a depth edge, draw a stroke along the
+  // edge's actual direction and position, so outlines come out as / \\ | _ .
+  float range = dmax - dmin;
+  if (uEdges > 0.0 && range > uEdgeThreshold) {
+    vec2 P[6];
+    vec2 pm = vec2(0.0);
+    float dm = 0.0;
+    for (int i = 0; i < 6; i++) {
+      P[i] = vec2((float(i & 1) + 0.5) * 0.5, (2.5 - float(i >> 1)) / 3.0 * uCellAspect);
+      pm += P[i];
+      dm += d[i];
+    }
+    pm /= 6.0;
+    dm /= 6.0;
+    vec2 g = vec2(0.0), gd = vec2(0.0);
+    for (int i = 0; i < 6; i++) {
+      vec2 q = P[i] - pm;
+      g += (d[i] - dm) * q;
+      gd += q * q;
+    }
+    g /= gd;
+    vec2 n = length(g) > 1e-5 ? normalize(g) : vec2(0.0, 1.0);
+    float mid = 0.5 * (dmin + dmax);
+    float nearSum = 0.0, farSum = 0.0, nearN = 0.0, farN = 0.0, nearPeak = 0.0;
+    for (int i = 0; i < 6; i++) {
+      float t = dot(P[i] - pm, n);
+      if (d[i] < mid) { nearSum += t; nearN += 1.0; nearPeak = max(nearPeak, s[i]); }
+      else { farSum += t; farN += 1.0; }
+    }
+    float o = 0.5 * (nearSum / max(nearN, 1.0) + farSum / max(farN, 1.0));
+    float ink = mix(max(nearPeak, 0.35), 1.0, 0.5);
+    float k = uEdges * smoothstep(uEdgeThreshold, uEdgeThreshold * 2.0, range);
+    for (int i = 0; i < 6; i++) {
+      float t = (dot(P[i] - pm, n) - o) / 0.32;
+      s[i] = mix(s[i], ink * exp(-t * t), k);
+    }
+  }
 
   vec4 a = vec4(s[0], s[1], s[2], s[3]);
   vec2 b = vec2(s[4], s[5]);
@@ -186,41 +345,150 @@ void main() {
     if (dist < bestDist) { bestDist = dist; best = k; }
   }
 
-  // Keep hue; lift dark cells so sparse glyphs still carry colour.
-  float peak = max(max(color.r, color.g), color.b);
-  vec3 tint = color / max(peak, 0.25);
-  outColor = vec4(float(best) / 255.0, tint);
+  // Keep hue; lift dark cells so sparse glyphs still carry colour. When
+  // quantizing, go all the way to full brightness: the glyph already carries
+  // the tone, and a dim tint would snap to the palette's black and vanish.
+  float cpeak = max(max(color.r, color.g), color.b);
+  vec3 tint = color / max(cpeak, uPaletteSize > 0 ? 1e-3 : 0.25);
+  float dither = (bayer4(cell) - 0.5) * uDither * 0.25;
+  vec3 fg = quantize(mix(uFg, tint, uColorMix), dither);
+
+  vec3 bg = uBg.rgb;
+  float bgA = uBg.a;
+  if (uCellBg > 0.0) {
+    float ppeak = max(max(paper.r, paper.g), paper.b);
+    vec3 paperTint = mix(uFg, paper / max(ppeak, 0.25), uColorMix);
+    float amount = clamp(lb, 0.0, 1.0);
+    bg = quantize(mix(uBg.rgb, paperTint, amount), dither);
+    bgA = mix(uBg.a, 1.0, amount);
+  }
+
+  outGlyph = vec4(float(best) / 255.0, fg);
+  outCell = vec4(bg, bgA);
 }`;
 
-/** Composite pass: full resolution, two texelFetches per pixel. */
+/**
+ * Glow: separable Gaussian over the cell grid. The first pass turns each
+ * cell into light (glyph colour x glyph ink coverage); both write
+ * premultiplied colour in rgb and energy in a.
+ */
+export const GLOW_FS = /* glsl */ `#version 300 es
+precision highp float;
+precision highp int;
+uniform sampler2D uSource;
+uniform sampler2D uShapes;
+uniform int uFromGlyphs;
+uniform ivec2 uDirection;
+uniform float uRadius;      // in cells
+out vec4 outColor;
+
+vec4 light(ivec2 p) {
+  ivec2 size = textureSize(uSource, 0);
+  if (p.x < 0 || p.y < 0 || p.x >= size.x || p.y >= size.y) return vec4(0.0);
+  vec4 g = texelFetch(uSource, p, 0);
+  if (uFromGlyphs == 0) return g;
+  int idx = int(g.r * 255.0 + 0.5);
+  float ink = texelFetch(uShapes, ivec2(idx, 1), 0).z;
+  return vec4(g.gba * ink, ink);
+}
+
+void main() {
+  ivec2 p = ivec2(gl_FragCoord.xy);
+  float sigma = max(uRadius, 0.5) * 0.5;
+  int r = int(min(ceil(uRadius), 8.0));
+  vec4 acc = vec4(0.0);
+  float wsum = 0.0;
+  for (int i = -8; i <= 8; i++) {
+    if (i < -r || i > r) continue;
+    float w = exp(-float(i * i) / (2.0 * sigma * sigma));
+    acc += light(p + uDirection * i) * w;
+    wsum += w;
+  }
+  outColor = acc / wsum;
+}`;
+
+/** Composite: full resolution. Glyph lookup, glow, and the CRT stack. */
 export const COMPOSITE_FS = /* glsl */ `#version 300 es
 precision highp float;
 precision highp int;
 
 uniform sampler2D uGlyphs;
+uniform sampler2D uCells;
+uniform sampler2D uGlowTex;
 uniform sampler2D uAtlas;
 uniform ivec2 uCell;       // device px
+uniform ivec2 uGrid;       // columns, rows
 uniform int uAtlasColumns;
 uniform int uYOffset;      // anchors the grid to the top edge
-uniform vec3 uFg;
-uniform vec4 uBg;          // straight alpha
-uniform float uColorMix;   // 0 = fg, 1 = scene colour
+uniform vec2 uResolution;  // canvas px
+uniform float uGlow;
 uniform float uScanlines;
+uniform float uCurvature;
+uniform float uVignette;
+uniform float uMask;
+uniform float uFringe;     // px
+uniform float uFlicker;    // current gain multiplier, 1 = none
 
 out vec4 outColor;
 
-void main() {
-  ivec2 p = ivec2(gl_FragCoord.xy) + ivec2(0, uYOffset);
+float inkAt(ivec2 p) {
   ivec2 cell = p / uCell;
+  if (p.x < 0 || p.y < 0 || cell.x >= uGrid.x || cell.y >= uGrid.y) return 0.0;
   ivec2 local = p - cell * uCell;
-  vec4 g = texelFetch(uGlyphs, cell, 0);
-  int idx = int(g.r * 255.0 + 0.5);
+  int idx = int(texelFetch(uGlyphs, cell, 0).r * 255.0 + 0.5);
   ivec2 at = ivec2(idx % uAtlasColumns, idx / uAtlasColumns) * uCell
            + ivec2(local.x, uCell.y - 1 - local.y);
-  float ink = texelFetch(uAtlas, at, 0).r;
-  if (uScanlines > 0.0) ink *= 1.0 - uScanlines * float((int(gl_FragCoord.y) & 1) == 0);
+  return texelFetch(uAtlas, at, 0).r;
+}
 
-  vec3 fg = mix(uFg, g.gba, uColorMix);
-  float bgA = uBg.a * (1.0 - ink);
-  outColor = vec4(fg * ink + uBg.rgb * bgA, ink + bgA);
+void main() {
+  vec2 frag = gl_FragCoord.xy;
+  vec2 uv = frag / uResolution * 2.0 - 1.0;
+  float outside = 0.0;
+  if (uCurvature > 0.0) {
+    vec2 k = uv * (1.0 + uCurvature * 0.12 * dot(uv, uv));
+    outside = step(1.0, max(abs(k.x), abs(k.y)));
+    frag = (k * 0.5 + 0.5) * uResolution;
+  }
+
+  ivec2 p = ivec2(floor(frag)) + ivec2(0, uYOffset);
+  ivec2 cell = clamp(p / uCell, ivec2(0), uGrid - 1);
+  vec4 g = texelFetch(uGlyphs, cell, 0);
+  vec4 bgc = texelFetch(uCells, cell, 0);
+
+  vec3 ink;
+  if (uFringe > 0.0) {
+    int f = int(uFringe + 0.5);
+    ink = vec3(inkAt(p + ivec2(f, 0)), inkAt(p), inkAt(p - ivec2(f, 0)));
+  } else {
+    ink = vec3(inkAt(p));
+  }
+
+  // Background, premultiplied, with glow laid over it.
+  vec3 base = bgc.rgb * bgc.a;
+  float alpha = bgc.a;
+  if (uGlow > 0.0) {
+    vec2 cuv = (vec2(p) + 0.5) / vec2(uCell) / vec2(uGrid);
+    vec4 gl = texture(uGlowTex, cuv);
+    float amount = clamp(gl.a * uGlow, 0.0, 1.0);
+    vec3 glowColor = gl.a > 1e-4 ? gl.rgb / gl.a : vec3(0.0);
+    base = mix(base, glowColor, amount);
+    alpha = mix(alpha, 1.0, amount);
+  }
+
+  vec3 rgb = mix(base, g.gba, ink);
+  alpha = mix(alpha, 1.0, max(ink.r, max(ink.g, ink.b)));
+
+  if (uScanlines > 0.0) rgb *= 1.0 - uScanlines * float((int(gl_FragCoord.y) & 1) == 0);
+  if (uMask > 0.0) {
+    int col = int(gl_FragCoord.x) % 3;
+    vec3 m = col == 0 ? vec3(1.0, 0.0, 0.0) : (col == 1 ? vec3(0.0, 1.0, 0.0) : vec3(0.0, 0.0, 1.0));
+    rgb *= mix(vec3(1.0), 0.35 + 0.95 * m, uMask);
+  }
+  if (uVignette > 0.0) {
+    float v = 1.0 - uVignette * 0.6 * pow(dot(uv * vec2(0.85, 1.0), uv * vec2(0.85, 1.0)) * 0.5, 1.4);
+    rgb *= clamp(v, 0.0, 1.0);
+  }
+  rgb *= uFlicker;
+  outColor = vec4(rgb, alpha) * (1.0 - outside);
 }`;

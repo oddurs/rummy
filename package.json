@@ -41,7 +41,10 @@
     "build:demo": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "check": "pnpm typecheck && pnpm build && pnpm build:demo"
+    "check": "pnpm typecheck && pnpm build && pnpm size && pnpm build:demo",
+    "size": "node scripts/size.mjs",
+    "shots": "pnpm build:demo && node scripts/shots.mjs --sheet",
+    "bench": "pnpm build:demo && node scripts/bench.mjs"
   },
   "devDependencies": {
     "typescript": "^7.0.2",

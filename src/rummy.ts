@@ -4,22 +4,40 @@ import {
   createTarget,
   createTexture,
   deleteTarget,
+  oklab,
   parseColor,
   type Program,
   type Target,
 } from './gl';
 import {
   COMPOSITE_FS,
+  EXPOSURE_FS,
   FULLSCREEN_VS,
+  GLOW_FS,
   GLYPH_FS,
+  LUMA_FS,
   SCENE_MAIN,
   SCENE_PRELUDE,
   SOURCE_SCENE,
 } from './shaders';
 import { ring } from './scenes';
+import { GpuTimer, type GpuTimes } from './timer';
 
 /** GLSL defining `vec4 scene(vec2 uv)`, or any image/video/canvas to asciify. */
 export type SceneInput = string | TexImageSource;
+
+export interface CrtOptions {
+  /** Barrel distortion, 0..1. */
+  curvature: number;
+  /** Corner darkening, 0..1. */
+  vignette: number;
+  /** Aperture-grille RGB mask, 0..1. */
+  mask: number;
+  /** Red/blue offset in CSS px. */
+  fringe: number;
+  /** Brightness flicker, 0..1. Off under reduced motion. */
+  flicker: number;
+}
 
 export interface RummyOptions {
   /** GLSL scene snippet or a texture source. Default: the `ring` scene. */
@@ -40,9 +58,21 @@ export interface RummyOptions {
   bg: string;
   /** 0 = monochrome `fg`, 1 = full scene colour. */
   colorMix: number;
+  /** Quantize cell colours to these (any CSS colours, up to 32). See `palettes`. */
+  palette: readonly string[] | null;
+  /** Ordered dither across cells when quantizing, 0..1. */
+  dither: number;
+  /** Two-tone cells: the darker part of each cell becomes its background, 0..1. */
+  cellBackground: number;
   /** Brightness multiplier before glyph matching. */
   gain: number;
   gamma: number;
+  /**
+   * Exposure multiplier, or `auto` to adapt to the frame. `source` (default) is
+   * auto for images, video and canvases and 1 for GLSL scenes, which are tuned
+   * by hand.
+   */
+  exposure: number | 'auto' | 'source';
   /** Exponent sharpening contrast inside a cell (1 = off). */
   contrast: number;
   /** Exponent sharpening contrast against neighbouring cells (1 = off). */
@@ -50,8 +80,22 @@ export interface RummyOptions {
   /** Depth-silhouette strength, 0..1. */
   edges: number;
   edgeThreshold: number;
+  /**
+   * Temporal anti-aliasing, 0..1: each frame samples a jittered point inside
+   * every region and blends into the history. Still frames refine over 16
+   * frames. 0 = one point sample per region, as before.
+   */
+  antialias: number;
   /** Supersampling per region: 1 (fast) or 2 (smoother). */
   quality: 1 | 2;
+  /** Phosphor glow around bright glyphs, 0..1. Computed at cell resolution. */
+  glow: number;
+  /** Glow radius in cells. */
+  glowRadius: number;
+  /** Darken every other device pixel row, 0..1. */
+  scanlines: number;
+  /** CRT screen effects. `true` for a tasteful preset. */
+  crt: boolean | Partial<CrtOptions>;
   /** Device pixel ratio cap. */
   maxDpr: number;
   /** 0 = uncapped. */
@@ -61,12 +105,12 @@ export interface RummyOptions {
   mouse: boolean;
   /** Shift the scene's focal point, in screen() units (y spans -1..1). */
   offset: [number, number];
-  /** Darken every other device pixel row, 0..1. */
-  scanlines: number;
   /** Stop rendering while the canvas is off screen. */
   pauseOffscreen: boolean;
   /** Honour prefers-reduced-motion by rendering a still frame. */
   respectReducedMotion: boolean;
+  /** Measure GPU time per pass into `stats.gpu` (where the browser allows). */
+  profile: boolean;
 }
 
 export const charsets = {
@@ -80,6 +124,9 @@ export const charsets = {
   katakana: ' ｦｱｳｴｵｶｷｹｺｻｼｽｾｿﾀﾂﾃﾅﾆﾇﾈﾊﾋﾎﾏﾐﾑﾒﾓﾔﾕﾗﾘﾜ012345789Z:.=*+-<>¦|',
 } as const;
 
+export const crtPreset: CrtOptions = { curvature: 0.5, vignette: 0.6, mask: 0.2, fringe: 0.75, flicker: 0.25 };
+const noCrt: CrtOptions = { curvature: 0, vignette: 0, mask: 0, fringe: 0, flicker: 0 };
+
 export const defaults: RummyOptions = {
   scene: ring,
   fontSize: 12,
@@ -91,21 +138,30 @@ export const defaults: RummyOptions = {
   fg: '#9dffb0',
   bg: '#050805',
   colorMix: 0,
+  palette: null,
+  dither: 0.5,
+  cellBackground: 0,
   gain: 0.85,
   gamma: 1.15,
+  exposure: 'source',
   contrast: 1.6,
   directionalContrast: 2.0,
-  edges: 0.5,
+  edges: 0.6,
   edgeThreshold: 0.08,
+  antialias: 0.6,
   quality: 1,
+  glow: 0,
+  glowRadius: 2.5,
+  scanlines: 0,
+  crt: false,
   maxDpr: 2,
   maxFps: 0,
   timeScale: 1,
   mouse: true,
   offset: [0, 0],
-  scanlines: 0,
   pauseOffscreen: true,
   respectReducedMotion: true,
+  profile: false,
 };
 
 export interface RummyStats {
@@ -117,6 +173,8 @@ export interface RummyStats {
   width: number;
   height: number;
   fps: number;
+  /** GPU milliseconds per pass, when `profile` is on and the browser supports timer queries. */
+  gpu: GpuTimes | null;
 }
 
 const isSource = (s: SceneInput): s is TexImageSource => typeof s !== 'string';
@@ -137,6 +195,22 @@ function isStatic(s: TexImageSource): boolean {
   );
 }
 
+/** A scene's declared still moment: `#define STILL 5.0` in its GLSL, else 0. */
+function stillOf(scene: SceneInput): number {
+  if (typeof scene !== 'string') return 0;
+  const m = /#define\s+STILL\s+(-?[\d.]+)/.exec(scene);
+  return m ? Number(m[1]) : 0;
+}
+
+/** Frames a still image refines over before the loop goes idle. */
+const REFINE_FRAMES = 16;
+
+/** R2 low-discrepancy sequence, centred: frame 0 samples the region centre. */
+function jitter(frame: number): [number, number] {
+  if (frame === 0) return [0, 0];
+  return [((0.5 + frame * 0.7548776662) % 1) - 0.5, ((0.5 + frame * 0.569840291) % 1) - 0.5];
+}
+
 /**
  * Renders a 3D (or any) scene as ASCII into a canvas.
  *
@@ -145,30 +219,46 @@ function isStatic(s: TexImageSource): boolean {
  *   r.destroy();
  */
 export class Rummy {
+  /**
+   * The moment a scene declares as its still (`#define STILL 5.0`), or 0.
+   * Rummy starts scenes there and holds it under prefers-reduced-motion.
+   */
+  static stillOf = stillOf;
+
   readonly canvas: HTMLCanvasElement;
-  readonly stats: RummyStats = { columns: 0, rows: 0, samples: 0, width: 0, height: 0, fps: 0 };
+  readonly stats: RummyStats = { columns: 0, rows: 0, samples: 0, width: 0, height: 0, fps: 0, gpu: null };
 
   private opts: RummyOptions;
   private gl: WebGL2RenderingContext;
   private vao: WebGLVertexArrayObject | null = null;
-  private sceneProgram: Program | null = null;
-  private glyphProgram: Program | null = null;
-  private compositeProgram: Program | null = null;
-  private sceneTarget: Target | null = null;
+  private programs: Record<'scene' | 'luma' | 'exposure' | 'glyph' | 'glow' | 'composite', Program> | null = null;
+  private sceneTargets: [Target, Target] | null = null;
+  private sceneIndex = 0;
+  private lumaTarget: Target | null = null;
+  private exposureTargets: [Target, Target] | null = null;
+  private exposureIndex = 0;
   private glyphTarget: Target | null = null;
+  private glowTargets: [Target, Target] | null = null;
   private atlas: Atlas | null = null;
   private atlasTex: WebGLTexture | null = null;
   private shapesTex: WebGLTexture | null = null;
   private sourceTex: WebGLTexture | null = null;
   private sourceUploaded = false;
+  private timer: GpuTimer | null = null;
+  private paletteLab = new Float32Array(32 * 3);
+  private paletteRgb = new Float32Array(32 * 3);
+  private paletteSize = 0;
 
   private dpr = 1;
   private raf = 0;
-  private time = 0;
+  private clock = 0;
   private last = -1;
+  private dt = 0;
   private lastDrawn = -Infinity;
   private fpsFrames = 0;
   private fpsStart = 0;
+  private accumFrame = 0;
+  private exposureFresh = true;
   private mouse: [number, number] = [0, 0];
   private mouseTarget: [number, number] = [0, 0];
   private onscreen = true;
@@ -186,6 +276,7 @@ export class Rummy {
   constructor(canvas: HTMLCanvasElement, options: Partial<RummyOptions> = {}) {
     this.canvas = canvas;
     this.opts = { ...defaults, ...options };
+    this.clock = stillOf(this.opts.scene);
     const gl = canvas.getContext('webgl2', {
       alpha: true,
       premultipliedAlpha: true,
@@ -199,7 +290,7 @@ export class Rummy {
 
     this.init();
 
-    this.resizeObserver = new ResizeObserver(() => this.resize());
+    this.resizeObserver = new ResizeObserver(() => this.layout());
     this.resizeObserver.observe(canvas);
 
     if (typeof IntersectionObserver !== 'undefined') {
@@ -228,6 +319,16 @@ export class Rummy {
     return { ...this.opts };
   }
 
+  /** Scene time in seconds. Setting it jumps the animation (and restarts refinement). */
+  get time(): number {
+    return this.clock;
+  }
+
+  set time(t: number) {
+    this.clock = t;
+    this.invalidate();
+  }
+
   /** Update any options. Cheap for uniforms; font/charset changes rebuild the atlas. */
   set(options: Partial<RummyOptions>): void {
     const prev = this.opts;
@@ -235,7 +336,13 @@ export class Rummy {
     const changed = (k: keyof RummyOptions) => k in options && options[k] !== prev[k];
 
     if (this.lost) return;
-    if (changed('scene')) this.compileScene();
+    if (changed('scene')) {
+      this.compileScene();
+      this.exposureFresh = true;
+      this.clock = stillOf(this.opts.scene);
+    }
+    if (changed('palette')) this.buildPalette();
+    if (changed('profile')) this.setupTimer();
     if (
       changed('fontSize') ||
       changed('fontFamily') ||
@@ -244,13 +351,20 @@ export class Rummy {
       changed('charset') ||
       changed('maxDpr')
     ) {
-      this.resize(true);
+      this.layout(true);
       if (changed('fontFamily') || changed('fontWeight')) this.watchFont();
     } else if (changed('quality')) {
       this.allocateTargets();
     }
-    this.dirty = true;
-    this.schedule();
+    this.invalidate();
+  }
+
+  /**
+   * Re-measure the canvas now. Layout changes are picked up automatically by a
+   * ResizeObserver; call this when you need the new size this frame.
+   */
+  resize(): void {
+    this.layout();
   }
 
   play(): void {
@@ -262,7 +376,10 @@ export class Rummy {
     this.playing = false;
   }
 
-  /** Render one frame now, regardless of play state. */
+  /**
+   * Render one frame now, regardless of play state. Still frames refine with
+   * each call (up to 16), so call it repeatedly for a fully anti-aliased still.
+   */
   render(): void {
     if (this.lost || this.destroyed || !this.atlas) return;
     this.draw();
@@ -285,33 +402,75 @@ export class Rummy {
   private init(): void {
     const gl = this.gl;
     this.vao = gl.createVertexArray();
-    this.glyphProgram = createProgram(gl, FULLSCREEN_VS, GLYPH_FS);
-    this.compositeProgram = createProgram(gl, FULLSCREEN_VS, COMPOSITE_FS);
-    this.compileScene();
-    this.resize(true);
+    this.programs = {
+      scene: this.buildSceneProgram(),
+      luma: createProgram(gl, FULLSCREEN_VS, LUMA_FS),
+      exposure: createProgram(gl, FULLSCREEN_VS, EXPOSURE_FS),
+      glyph: createProgram(gl, FULLSCREEN_VS, GLYPH_FS),
+      glow: createProgram(gl, FULLSCREEN_VS, GLOW_FS),
+      composite: createProgram(gl, FULLSCREEN_VS, COMPOSITE_FS),
+    };
+    this.prepareSource();
+    this.exposureTargets = [createTarget(gl, 1, 1), createTarget(gl, 1, 1)];
+    this.exposureFresh = true;
+    this.buildPalette();
+    this.setupTimer();
+    this.layout(true);
   }
 
   private release(): void {
     const gl = this.gl;
+    this.timer?.dispose();
+    this.timer = null;
     if (gl.isContextLost()) return;
-    for (const p of [this.sceneProgram, this.glyphProgram, this.compositeProgram]) if (p) gl.deleteProgram(p.program);
+    for (const p of Object.values(this.programs ?? {})) gl.deleteProgram(p.program);
     for (const t of [this.atlasTex, this.shapesTex, this.sourceTex]) if (t) gl.deleteTexture(t);
-    deleteTarget(gl, this.sceneTarget);
-    deleteTarget(gl, this.glyphTarget);
+    for (const t of [
+      ...(this.sceneTargets ?? []),
+      ...(this.exposureTargets ?? []),
+      ...(this.glowTargets ?? []),
+      this.lumaTarget,
+      this.glyphTarget,
+    ]) {
+      deleteTarget(gl, t);
+    }
     gl.deleteVertexArray(this.vao);
-    this.sceneProgram = this.glyphProgram = this.compositeProgram = null;
+    this.programs = null;
     this.atlasTex = this.shapesTex = this.sourceTex = null;
-    this.sceneTarget = this.glyphTarget = null;
+    this.sceneTargets = this.exposureTargets = this.glowTargets = null;
+    this.lumaTarget = this.glyphTarget = null;
+  }
+
+  private setupTimer(): void {
+    if (this.opts.profile && !this.timer) {
+      this.timer = new GpuTimer(this.gl);
+      if (!this.timer.supported) this.timer = null;
+    } else if (!this.opts.profile && this.timer) {
+      this.timer.dispose();
+      this.timer = null;
+    }
+    this.stats.gpu = this.timer ? this.timer.times : null;
+  }
+
+  private buildSceneProgram(): Program {
+    const { scene } = this.opts;
+    const body = isSource(scene) ? SOURCE_SCENE : scene;
+    // Newlines matter: a scene may open with a preprocessor line (#define STILL).
+    return createProgram(this.gl, FULLSCREEN_VS, `${SCENE_PRELUDE}\n${body}\n${SCENE_MAIN}`);
   }
 
   private compileScene(): void {
+    const next = this.buildSceneProgram();
+    if (this.programs) {
+      this.gl.deleteProgram(this.programs.scene.program);
+      this.programs.scene = next;
+    }
+    this.prepareSource();
+  }
+
+  private prepareSource(): void {
     const gl = this.gl;
     const { scene } = this.opts;
-    const body = isSource(scene) ? SOURCE_SCENE : scene;
-    const next = createProgram(gl, FULLSCREEN_VS, SCENE_PRELUDE + body + SCENE_MAIN);
-    if (this.sceneProgram) gl.deleteProgram(this.sceneProgram.program);
-    this.sceneProgram = next;
-
     if (isSource(scene)) {
       if (!this.sourceTex) {
         this.sourceTex = gl.createTexture();
@@ -323,6 +482,16 @@ export class Rummy {
       }
       this.sourceUploaded = false;
     }
+  }
+
+  private buildPalette(): void {
+    const colors = (this.opts.palette ?? []).slice(0, 32);
+    this.paletteSize = colors.length;
+    colors.forEach((css, i) => {
+      const rgb = parseColor(css).slice(0, 3);
+      this.paletteRgb.set(rgb, i * 3);
+      this.paletteLab.set(oklab(rgb), i * 3);
+    });
   }
 
   private fontSpec(): FontSpec {
@@ -369,12 +538,12 @@ export class Rummy {
     document.fonts
       .load(spec)
       .then((faces) => {
-        if (faces.length && epoch === this.fontEpoch && !this.destroyed && !this.lost) this.resize(true);
+        if (faces.length && epoch === this.fontEpoch && !this.destroyed && !this.lost) this.layout(true);
       })
       .catch(() => {});
   }
 
-  private resize(rebuildGlyphs = false): void {
+  private layout(rebuildGlyphs = false): void {
     if (this.lost || this.destroyed) return;
     const dpr = Math.min(window.devicePixelRatio || 1, this.opts.maxDpr);
     const width = Math.max(1, Math.round(this.canvas.clientWidth * dpr));
@@ -385,8 +554,7 @@ export class Rummy {
     if (this.canvas.width !== width) this.canvas.width = width;
     if (this.canvas.height !== height) this.canvas.height = height;
     this.allocateTargets();
-    this.dirty = true;
-    this.schedule();
+    this.invalidate();
   }
 
   private allocateTargets(): void {
@@ -398,13 +566,20 @@ export class Rummy {
 
     if (this.glyphTarget?.width !== columns || this.glyphTarget?.height !== rows) {
       deleteTarget(gl, this.glyphTarget);
-      this.glyphTarget = createTarget(gl, columns, rows);
+      deleteTarget(gl, this.lumaTarget);
+      for (const t of this.glowTargets ?? []) deleteTarget(gl, t);
+      this.glyphTarget = createTarget(gl, columns, rows, { attachments: 2 });
+      this.lumaTarget = createTarget(gl, columns, rows, { mipmaps: true });
+      this.glowTargets = [
+        createTarget(gl, columns, rows, { filter: gl.LINEAR }),
+        createTarget(gl, columns, rows, { filter: gl.LINEAR }),
+      ];
     }
     const sw = columns * 2 * q;
     const sh = rows * 3 * q;
-    if (this.sceneTarget?.width !== sw || this.sceneTarget?.height !== sh) {
-      deleteTarget(gl, this.sceneTarget);
-      this.sceneTarget = createTarget(gl, sw, sh);
+    if (this.sceneTargets?.[0].width !== sw || this.sceneTargets?.[0].height !== sh) {
+      for (const t of this.sceneTargets ?? []) deleteTarget(gl, t);
+      this.sceneTargets = [createTarget(gl, sw, sh), createTarget(gl, sw, sh)];
     }
 
     Object.assign(this.stats, {
@@ -414,7 +589,14 @@ export class Rummy {
       width: this.canvas.width,
       height: this.canvas.height,
     });
+    this.invalidate();
+  }
+
+  /** Something changed: redraw, and restart temporal refinement from scratch. */
+  private invalidate(): void {
     this.dirty = true;
+    this.accumFrame = 0;
+    this.schedule();
   }
 
   // --- frame loop ----------------------------------------------------------
@@ -423,10 +605,18 @@ export class Rummy {
     return this.playing && !(this.opts.respectReducedMotion && this.reducedMotion);
   }
 
+  private get moving(): boolean {
+    return this.animating || this.sourceIsLive();
+  }
+
+  private get refining(): boolean {
+    return !this.moving && this.opts.antialias > 0 && this.accumFrame < REFINE_FRAMES;
+  }
+
   private schedule(): void {
     if (this.raf || this.destroyed || this.lost) return;
     if (this.opts.pauseOffscreen && !this.onscreen) return;
-    if (!this.animating && !this.dirty && !this.sourceIsLive()) return;
+    if (!this.moving && !this.dirty && !this.refining) return;
     this.raf = requestAnimationFrame(this.frame);
   }
 
@@ -439,7 +629,8 @@ export class Rummy {
     this.raf = 0;
     const dt = this.last < 0 ? 0 : Math.min((now - this.last) / 1000, 0.1);
     this.last = now;
-    if (this.animating) this.time += dt * this.opts.timeScale;
+    this.dt = dt;
+    if (this.animating) this.clock += dt * this.opts.timeScale;
 
     const k = 1 - Math.exp(-dt * 5);
     this.mouse[0] += (this.mouseTarget[0] - this.mouse[0]) * k;
@@ -447,10 +638,9 @@ export class Rummy {
 
     const interval = this.opts.maxFps > 0 ? 1000 / this.opts.maxFps : 0;
     const due = now - this.lastDrawn >= interval - 1;
-    if ((this.animating || this.dirty || this.sourceIsLive()) && due) {
+    if ((this.moving || this.dirty || this.refining) && due) {
       this.lastDrawn = now;
       this.draw();
-      this.dirty = false;
       this.fpsFrames++;
       if (now - this.fpsStart >= 500) {
         this.stats.fps = (this.fpsFrames * 1000) / (now - this.fpsStart);
@@ -458,44 +648,113 @@ export class Rummy {
         this.fpsStart = now;
       }
     }
-    if (!this.animating && !this.sourceIsLive()) this.last = -1;
+    if (!this.moving) this.last = -1;
     this.schedule();
   };
+
+  private resolvedCrt(): CrtOptions {
+    const { crt } = this.opts;
+    if (crt === true) return crtPreset;
+    if (!crt) return noCrt;
+    return { ...noCrt, ...crt };
+  }
+
+  private autoExposure(): boolean {
+    const { exposure, scene } = this.opts;
+    return exposure === 'auto' || (exposure === 'source' && isSource(scene));
+  }
+
+  private pass(target: Target | null, program: Program): void {
+    const gl = this.gl;
+    if (target) {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, target.fb);
+      gl.viewport(0, 0, target.width, target.height);
+    } else {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+    }
+    gl.useProgram(program.program);
+  }
+
+  private bind(unit: number, tex: WebGLTexture | null, location: WebGLUniformLocation | undefined): void {
+    const gl = this.gl;
+    gl.activeTexture(gl.TEXTURE0 + unit);
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    if (location) gl.uniform1i(location, unit);
+  }
 
   private draw(): void {
     const gl = this.gl;
     const atlas = this.atlas!;
-    const scene = this.sceneTarget!;
+    const programs = this.programs!;
     const glyphs = this.glyphTarget!;
     const o = this.opts;
+    const timer = this.timer;
     gl.bindVertexArray(this.vao);
     gl.disable(gl.BLEND);
 
-    // 1. Scene at 2x3 samples per cell.
-    const sp = this.sceneProgram!;
-    gl.bindFramebuffer(gl.FRAMEBUFFER, scene.fb);
-    gl.viewport(0, 0, scene.width, scene.height);
-    gl.useProgram(sp.program);
+    // 1. Scene: one jittered sample per region, folded into the history.
+    const prev = this.sceneTargets![this.sceneIndex];
+    const scene = this.sceneTargets![1 - this.sceneIndex];
+    this.sceneIndex = 1 - this.sceneIndex;
+    const aa = Math.max(0, Math.min(1, o.antialias));
+    const first = this.accumFrame === 0 || aa === 0;
+    const blend = first ? 1 : this.moving ? 1 - 0.65 * aa : 1 / (Math.min(this.accumFrame, REFINE_FRAMES) + 1);
+    const [jx, jy] = aa > 0 ? jitter(this.accumFrame % 64) : [0, 0];
+    this.accumFrame++;
+
+    const glow = o.glow > 0;
+    timer?.beginFrame(glow ? ['scene', 'glyph', 'glow', 'composite'] : ['scene', 'glyph', 'composite']);
+    const sp = programs.scene;
+    this.pass(scene, sp);
     const aspect = (glyphs.width * atlas.cellWidth) / (glyphs.height * atlas.cellHeight);
-    gl.uniform1f(sp.u.uTime, this.time);
+    gl.uniform1f(sp.u.uTime, this.clock);
     gl.uniform2f(sp.u.uMouse, this.mouse[0], this.mouse[1]);
     gl.uniform1f(sp.u.uAspect, aspect);
     gl.uniform2f(sp.u.uResolution, scene.width, scene.height);
     gl.uniform2f(sp.u.uOffset, o.offset[0], o.offset[1]);
+    gl.uniform1f(sp.u.uBlend, blend);
+    gl.uniform2f(sp.u.uJitter, jx, jy);
+    this.bind(1, prev.textures[0], sp.u.uPrev);
     if (isSource(o.scene)) this.bindSource(o.scene, sp, aspect);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
+    timer?.mark('scene');
 
-    // 2. One glyph per cell.
-    const gp = this.glyphProgram!;
-    gl.bindFramebuffer(gl.FRAMEBUFFER, glyphs.fb);
-    gl.viewport(0, 0, glyphs.width, glyphs.height);
-    gl.useProgram(gp.program);
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, scene.tex);
-    gl.uniform1i(gp.u.uScene, 0);
-    gl.activeTexture(gl.TEXTURE1);
-    gl.bindTexture(gl.TEXTURE_2D, this.shapesTex);
-    gl.uniform1i(gp.u.uShapes, 1);
+    // 2. Exposure, when adaptive: cell luminance -> mips -> eased 1x1 value.
+    const auto = this.autoExposure();
+    const exposureTargets = this.exposureTargets!;
+    if (auto) {
+      const lp = programs.luma;
+      const luma = this.lumaTarget!;
+      this.pass(luma, lp);
+      this.bind(0, scene.textures[0], lp.u.uScene);
+      gl.uniform1i(lp.u.uQuality, o.quality);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      gl.bindTexture(gl.TEXTURE_2D, luma.textures[0]);
+      gl.generateMipmap(gl.TEXTURE_2D);
+
+      const ep = programs.exposure;
+      const prevE = exposureTargets[this.exposureIndex];
+      const nextE = exposureTargets[1 - this.exposureIndex];
+      this.exposureIndex = 1 - this.exposureIndex;
+      this.pass(nextE, ep);
+      this.bind(0, luma.textures[0], ep.u.uLuma);
+      this.bind(1, prevE.textures[0], ep.u.uPrevExposure);
+      gl.uniform1i(ep.u.uLumaLevel, Math.floor(Math.log2(Math.max(luma.width, luma.height))));
+      // Ease while moving so cuts don't pump; snap for stills.
+      gl.uniform1f(ep.u.uRate, this.exposureFresh || !this.moving ? 1 : 1 - Math.exp(-this.dt / 0.5));
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      this.exposureFresh = false;
+    }
+
+    // 3. One glyph, glyph colour and background per cell.
+    const gp = programs.glyph;
+    this.pass(glyphs, gp);
+    this.bind(0, scene.textures[0], gp.u.uScene);
+    this.bind(1, this.shapesTex, gp.u.uShapes);
+    this.bind(2, exposureTargets[this.exposureIndex].textures[0], gp.u.uExposureTex);
+    gl.uniform1i(gp.u.uAutoExposure, auto ? 1 : 0);
+    gl.uniform1f(gp.u.uExposure, typeof o.exposure === 'number' ? o.exposure : 1);
     gl.uniform1i(gp.u.uCount, atlas.chars.length);
     gl.uniform1i(gp.u.uQuality, o.quality);
     gl.uniform1i(gp.u.uMode, o.mode === 'density' ? 1 : 0);
@@ -505,36 +764,72 @@ export class Rummy {
     gl.uniform1f(gp.u.uDirContrast, o.directionalContrast);
     gl.uniform1f(gp.u.uEdges, o.edges);
     gl.uniform1f(gp.u.uEdgeThreshold, o.edgeThreshold);
-    gl.drawArrays(gl.TRIANGLES, 0, 3);
-
-    // 3. Composite glyphs at full resolution.
-    const cp = this.compositeProgram!;
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    gl.viewport(0, 0, this.canvas.width, this.canvas.height);
-    gl.useProgram(cp.program);
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, glyphs.tex);
-    gl.uniform1i(cp.u.uGlyphs, 0);
-    gl.activeTexture(gl.TEXTURE1);
-    gl.bindTexture(gl.TEXTURE_2D, this.atlasTex);
-    gl.uniform1i(cp.u.uAtlas, 1);
-    gl.uniform2i(cp.u.uCell, atlas.cellWidth, atlas.cellHeight);
-    gl.uniform1i(cp.u.uAtlasColumns, atlas.columns);
-    gl.uniform1i(cp.u.uYOffset, glyphs.height * atlas.cellHeight - this.canvas.height);
+    gl.uniform1f(gp.u.uCellAspect, atlas.cellHeight / atlas.cellWidth);
     const fg = parseColor(o.fg);
     const bg = parseColor(o.bg);
-    gl.uniform3f(cp.u.uFg, fg[0], fg[1], fg[2]);
-    gl.uniform4f(cp.u.uBg, bg[0], bg[1], bg[2], bg[3]);
-    gl.uniform1f(cp.u.uColorMix, o.colorMix);
-    gl.uniform1f(cp.u.uScanlines, o.scanlines);
+    gl.uniform3f(gp.u.uFg, fg[0], fg[1], fg[2]);
+    gl.uniform4f(gp.u.uBg, bg[0], bg[1], bg[2], bg[3]);
+    gl.uniform1f(gp.u.uColorMix, o.colorMix);
+    gl.uniform1f(gp.u.uCellBg, o.cellBackground);
+    gl.uniform1i(gp.u.uPaletteSize, this.paletteSize);
+    if (this.paletteSize) {
+      gl.uniform3fv(gp.u.uPalette, this.paletteLab);
+      gl.uniform3fv(gp.u.uPaletteRgb, this.paletteRgb);
+    }
+    gl.uniform1f(gp.u.uDither, o.dither);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
+    timer?.mark('glyph');
+
+    // 4. Glow: blur the cells' light at cell resolution.
+    if (glow) {
+      const wp = programs.glow;
+      const [ga, gb] = this.glowTargets!;
+      this.pass(ga, wp);
+      this.bind(0, glyphs.textures[0], wp.u.uSource);
+      this.bind(1, this.shapesTex, wp.u.uShapes);
+      gl.uniform1i(wp.u.uFromGlyphs, 1);
+      gl.uniform2i(wp.u.uDirection, 1, 0);
+      gl.uniform1f(wp.u.uRadius, o.glowRadius);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      this.pass(gb, wp);
+      this.bind(0, ga.textures[0], wp.u.uSource);
+      gl.uniform1i(wp.u.uFromGlyphs, 0);
+      gl.uniform2i(wp.u.uDirection, 0, 1);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      timer?.mark('glow');
+    }
+
+    // 5. Composite at full resolution.
+    const cp = programs.composite;
+    this.pass(null, cp);
+    this.bind(0, glyphs.textures[0], cp.u.uGlyphs);
+    this.bind(1, glyphs.textures[1], cp.u.uCells);
+    this.bind(2, this.atlasTex, cp.u.uAtlas);
+    this.bind(3, this.glowTargets![1].textures[0], cp.u.uGlowTex);
+    gl.uniform2i(cp.u.uCell, atlas.cellWidth, atlas.cellHeight);
+    gl.uniform2i(cp.u.uGrid, glyphs.width, glyphs.height);
+    gl.uniform1i(cp.u.uAtlasColumns, atlas.columns);
+    gl.uniform1i(cp.u.uYOffset, glyphs.height * atlas.cellHeight - this.canvas.height);
+    gl.uniform2f(cp.u.uResolution, this.canvas.width, this.canvas.height);
+    gl.uniform1f(cp.u.uGlow, glow ? o.glow * 2.5 : 0);
+    gl.uniform1f(cp.u.uScanlines, o.scanlines);
+    const crt = this.resolvedCrt();
+    const calm = !this.animating;
+    gl.uniform1f(cp.u.uCurvature, crt.curvature);
+    gl.uniform1f(cp.u.uVignette, crt.vignette);
+    gl.uniform1f(cp.u.uMask, crt.mask);
+    gl.uniform1f(cp.u.uFringe, crt.fringe * this.dpr);
+    gl.uniform1f(cp.u.uFlicker, calm || crt.flicker <= 0 ? 1 : 1 - crt.flicker * 0.06 * Math.random());
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    timer?.mark('composite');
+    timer?.endFrame();
+    this.dirty = false;
   }
 
   private bindSource(source: TexImageSource, sp: Program, aspect: number): void {
     const gl = this.gl;
     const [w, h] = sourceSize(source);
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, this.sourceTex);
+    this.bind(0, this.sourceTex, sp.u.uSource);
     const ready =
       w > 0 && h > 0 && !(source instanceof HTMLVideoElement && source.readyState < source.HAVE_CURRENT_DATA);
     if (ready && (!this.sourceUploaded || !isStatic(source))) {
@@ -549,7 +844,6 @@ export class Rummy {
     // Cover-fit the source to the grid.
     const src = w > 0 && h > 0 ? w / h : aspect;
     const scale: [number, number] = src > aspect ? [aspect / src, 1] : [1, src / aspect];
-    gl.uniform1i(sp.u.uSource, 0);
     gl.uniform2f(sp.u.uSourceScale, scale[0], scale[1]);
   }
 
@@ -566,8 +860,7 @@ export class Rummy {
 
   private onMotionChange = (e: MediaQueryListEvent): void => {
     this.reducedMotion = e.matches;
-    this.dirty = true;
-    this.schedule();
+    this.invalidate();
   };
 
   private onContextLost = (e: Event): void => {
@@ -580,8 +873,11 @@ export class Rummy {
   private onContextRestored = (): void => {
     this.lost = false;
     this.atlas = null;
-    this.sceneTarget = this.glyphTarget = null;
+    this.programs = null;
+    this.sceneTargets = this.exposureTargets = this.glowTargets = null;
+    this.lumaTarget = this.glyphTarget = null;
     this.atlasTex = this.shapesTex = this.sourceTex = null;
+    this.timer = null;
     this.init();
   };
 }
