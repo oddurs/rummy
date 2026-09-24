@@ -87,3 +87,7 @@ stand-in until someone runs it on one.
 Two things came up while finishing:
 - The GPU profiler (src/timer.ts) is now a lazily loaded chunk (0.81 KB gzipped), imported on first use of `profile: true`. That took the core from 14.00 to 13.50 KB, where the governor had pushed it to the limit.
 - The contact sheet caught the governor making shots nondeterministic: during a transition the shot page's renderer counts as moving, its frame loop ran between shots, and the level changed. Shots now run with `adaptive: false`.
+
+## Test hardened after CI
+
+The first CI run failed the responsiveness check. CI's SwiftShader is several times slower, so the test load was far past the machine's limit, where no level can help (page 8 → 10 fps). The test now looks for the *smallest* slow load (2× sampling, growing the canvas) with a 2 s warm-up, so it measures the governor where one has to work, on any machine. Local, three runs: page 25→39, 10→40, 20→57 fps.

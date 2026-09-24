@@ -689,22 +689,30 @@ async function governorCheck(): Promise<{
       changes,
     };
   };
-  // Baseline, governor off, escalating the load until it is genuinely slow
-  // (under 30 fps), so the test can't pass on a machine with headroom.
-  const loads: Partial<RummyOptions>[] = [
-    { fontSize: 12 },
-    { fontSize: 8 },
-    { fontSize: 8, quality: 2 },
-    { fontSize: 6, quality: 2 },
+  // Baseline, governor off: the smallest load that is genuinely slow (under
+  // 30 fps) on this machine, found by growing the canvas. Just past the limit
+  // is where a governor has to work; far past it no level can help, and with
+  // headroom there is nothing to test. The same test then fits a fast laptop
+  // and a slow CI runner.
+  const sizes: [number, number][] = [
+    [480, 270],
+    [640, 360],
+    [960, 540],
+    [1280, 720],
+    [1600, 900],
   ];
-  let load: Partial<RummyOptions> = loads[0];
+  const load: Partial<RummyOptions> = { fontSize: 10, quality: 2 };
+  let size = sizes[0];
   let fixedRun = { fps: 0, drawn: 0, changes: 0 };
   let levelFixed = 0;
-  for (const l of loads) {
-    load = l;
-    const fixed = new Rummy(c, { ...opts, ...l, adaptive: false });
-    await run(fixed, 1);
-    fixedRun = await run(fixed, 2);
+  for (const sz of sizes) {
+    size = sz;
+    c.style.width = `${sz[0]}px`;
+    c.style.height = `${sz[1]}px`;
+    const fixed = new Rummy(c, { ...opts, ...load, adaptive: false });
+    // Long enough for SwiftShader to finish compiling before timing starts.
+    await run(fixed, 2);
+    fixedRun = await run(fixed, 3);
     levelFixed = fixed.stats.level;
     fixed.destroy();
     if (fixedRun.fps < 30) break;
@@ -734,7 +742,7 @@ async function governorCheck(): Promise<{
     levelAfterRecovery,
     changesWhileSlow: settle.changes + governedRun.changes,
     levelFixed,
-    load: JSON.stringify(load),
+    load: `${size[0]}x${size[1]}, ${JSON.stringify(load)}`,
   };
 }
 

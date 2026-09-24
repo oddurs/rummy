@@ -111,7 +111,7 @@ console.log(
     `${gv.changesWhileSlow} level changes under load; back to level ${gv.levelAfterRecovery} when cheap`,
 );
 check(gv.fixedFps < 30, 'the test load is genuinely slow with the governor off (under 30 fps)');
-check(gv.levelSlow > 0, 'under load the governor sheds detail');
+check(gv.levelUnderLoad > 0, 'under load the governor sheds detail');
 check(gv.governedFps > gv.fixedFps * 1.25, 'shedding keeps the page responsive (page frame rate up at least 25%)');
 check(gv.changesWhileSlow <= gv.levelUnderLoad, 'no oscillation: under load the level only goes down');
 check(gv.levelAfterRecovery < gv.levelUnderLoad, 'when there is room again it climbs back up');
