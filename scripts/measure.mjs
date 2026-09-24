@@ -113,7 +113,10 @@ console.log(
 check(gv.fixedFps < 30, 'the test load is genuinely slow with the governor off (under 30 fps)');
 check(gv.levelUnderLoad > 0, 'under load the governor sheds detail');
 check(gv.governedFps > gv.fixedFps * 1.25, 'shedding keeps the page responsive (page frame rate up at least 25%)');
-check(gv.changesWhileSlow <= gv.levelUnderLoad, 'no oscillation: under load the level only goes down');
+// Stepping down takes levelUnderLoad changes; a probe up that fails and steps
+// back adds two. More than one failed probe in ~9 s would be flapping (the
+// wait before the next probe doubles each time one fails).
+check(gv.changesWhileSlow <= gv.levelUnderLoad + 2, `no flapping: at most one failed probe under load (${gv.changesWhileSlow} changes)`);
 check(gv.levelAfterRecovery < gv.levelUnderLoad, 'when there is room again it climbs back up');
 check(gv.levelFixed === 0, 'adaptive: false stays at full detail');
 

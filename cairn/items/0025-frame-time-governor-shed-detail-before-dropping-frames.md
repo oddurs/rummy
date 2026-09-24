@@ -91,3 +91,7 @@ Two things came up while finishing:
 ## Test hardened after CI
 
 The first CI run failed the responsiveness check. CI's SwiftShader is several times slower, so the test load was far past the machine's limit, where no level can help (page 8 → 10 fps). The test now looks for the *smallest* slow load (2× sampling, growing the canvas) with a 2 s warm-up, so it measures the governor where one has to work, on any machine. Local, three runs: page 25→39, 10→40, 20→57 fps.
+
+## Probing is not flapping
+
+The next CI run went 0→1→2→3, probed up to 2 after 4 s on time, found it late and returned to 3: 5 changes. That's the designed probe. The check now allows one failed probe in the ~9 s window (the wait doubles after each), and anything more fails as flapping.
