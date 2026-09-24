@@ -9,6 +9,7 @@ export interface Look {
 
 /** Every option a look may set, so switching looks resets what the last one changed. */
 export const lookDefaults: Partial<RummyOptions> = {
+  persistence: 0,
   colorMix: 0,
   palette: null,
   cellBackground: 0,
@@ -43,7 +44,7 @@ export const looks = {
     theme: { accent: '#55ffff', text: '#ffffff', dim: '#ff55ff' },
   },
   crt: {
-    options: { fg: '#ffb000', bg: '#0a0600', glow: 0.55, crt: true, scanlines: 0.3 },
+    options: { fg: '#ffb000', bg: '#0a0600', glow: 0.55, crt: true, scanlines: 0.3, persistence: 0.8 },
     theme: { accent: '#ffb000', text: '#ffe7b0', dim: '#8f7a4f' },
   },
 } satisfies Record<string, Look>;

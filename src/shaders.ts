@@ -594,3 +594,47 @@ void main() {
     outCell = c1;
   }
 }`;
+
+/**
+ * Persistence: phosphor afterglow at cell resolution. Last frame's persisted
+ * glyph, dimmed by uDecay, stays while it still outshines what this frame put
+ * in the cell. A new glyph always wins once it is brighter.
+ */
+export const PERSIST_FS = /* glsl */ `#version 300 es
+precision highp float;
+precision highp int;
+uniform sampler2D uGlyphs;
+uniform sampler2D uCells;
+uniform sampler2D uPrevGlyphs;
+uniform sampler2D uPrevCells;
+uniform sampler2D uShapes;
+uniform float uDecay;      // brightness kept since last frame, 0..1
+uniform float uFade;       // plus a small linear fade, so 8-bit storage can't stall
+uniform int uFresh;        // 1 when there is no valid history
+layout(location = 0) out vec4 outGlyph;
+layout(location = 1) out vec4 outCell;
+
+float glow(vec4 g) {
+  int idx = int(g.r * 255.0 + 0.5);
+  float ink = texelFetch(uShapes, ivec2(idx, 1), 0).z;
+  return ink * dot(g.gba, vec3(0.2126, 0.7152, 0.0722));
+}
+
+void main() {
+  ivec2 cell = ivec2(gl_FragCoord.xy);
+  vec4 g = texelFetch(uGlyphs, cell, 0);
+  vec4 c = texelFetch(uCells, cell, 0);
+  if (uFresh == 0) {
+    vec4 pg = texelFetch(uPrevGlyphs, cell, 0);
+    // Colours live in 8 bits: multiplying alone rounds back up at low values
+    // (3/255 * 0.85 = 2.55 -> 3) and a faint trail would never finish fading.
+    vec4 faded = vec4(pg.r, max(pg.gba * uDecay - uFade, 0.0));
+    if (glow(faded) > glow(g) * 1.05 + 0.004) {
+      outGlyph = faded;
+      outCell = c;
+      return;
+    }
+  }
+  outGlyph = g;
+  outCell = c;
+}`;

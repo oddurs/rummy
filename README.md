@@ -43,7 +43,8 @@ computed at cell resolution so it stays nearly free:
   region over 16 frames and converges to the quality of 4× supersampling. In motion
   there is no jitter: it made sub-cell detail flip between glyphs every frame. Motion
   keeps a light history instead, and measures under 0.25% flicker in every scene.
-- **Phosphor glow**, blurred over the cell grid rather than millions of pixels.
+- **Phosphor glow**, blurred over the cell grid rather than millions of pixels, and
+  **persistence**: bright glyphs leave a short fading trail behind anything that moves.
 - **Two-tone cells**: a background colour per cell, like a real terminal.
 - **Palettes** (ANSI, CGA, EGA, C64, Game Boy, phosphors) with ordered dithering.
 - **Auto-exposure** for images and video, with no GPU→CPU readback.
@@ -175,6 +176,7 @@ All options are optional and can be changed later with `rummy.set()`.
 | `antialias` | `0.6` | Stills refine over 16 jittered frames; in motion, how much of the last frame to keep (0 = point samples) |
 | `quality` | `1` | `2` supersamples each region 2×2 (4× scene cost) |
 | `glow` / `glowRadius` | `0` / `2.5` | Phosphor glow strength, and its radius in cells |
+| `persistence` | `0` | Phosphor afterglow: bright glyphs linger and fade. Brightness kept per 1/60 s, so trails match at any frame rate; off under reduced motion |
 | `crt` | `false` | `true` for a preset, or `{ curvature, vignette, mask, fringe, flicker }` |
 | `scanlines` | `0` | Darken alternate pixel rows |
 | `offset` | `[0, 0]` | Shift the focal point, e.g. to sit beside your headline |

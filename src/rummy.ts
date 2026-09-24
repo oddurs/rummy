@@ -17,6 +17,7 @@ import {
   GLYPH_FS,
   LUMA_FS,
   MIX_FS,
+  PERSIST_FS,
   SCENE_MAIN,
   SCENE_PRELUDE,
   SOURCE_SCENE,
@@ -116,6 +117,12 @@ export interface RummyOptions {
   antialias: number;
   /** Supersampling per region: 1 (fast) or 2 (smoother). */
   quality: 1 | 2;
+  /**
+   * Phosphor persistence, 0..1: bright glyphs linger and fade as the scene
+   * moves on. The share of brightness kept per 1/60 s, so trails are the same
+   * length at any frame rate. Off under prefers-reduced-motion.
+   */
+  persistence: number;
   /** Phosphor glow around bright glyphs, 0..1. Computed at cell resolution. */
   glow: number;
   /** Glow radius in cells. */
@@ -187,6 +194,7 @@ export const defaults: RummyOptions = {
   edgeThreshold: 0.08,
   antialias: 0.6,
   quality: 1,
+  persistence: 0,
   glow: 0,
   glowRadius: 2.5,
   scanlines: 0,
@@ -287,7 +295,13 @@ export class Rummy {
   private opts: RummyOptions;
   private gl: WebGL2RenderingContext;
   private vao: WebGLVertexArrayObject | null = null;
-  private programs: Record<'scene' | 'luma' | 'exposure' | 'glyph' | 'glow' | 'composite' | 'mix', Program> | null = null;
+  private programs: Record<'scene' | 'luma' | 'exposure' | 'glyph' | 'glow' | 'composite' | 'mix' | 'persist', Program> | null = null;
+  /** Afterglow grids, ping-ponged; allocated only while persistence is on. */
+  private persistTargets: [Target, Target] | null = null;
+  private persistIndex = 0;
+  private persistFresh = true;
+  /** The grid the last frame displayed: live, transition mix, or afterglow. */
+  private shown: Target | null = null;
   private transitionState: Transition | null = null;
   /** True while transition() applies its own options through set(). */
   private transitioning = false;
@@ -530,7 +544,7 @@ export class Rummy {
   toText(): string {
     if (this.lost || this.destroyed || !this.glyphTarget || !this.atlas) return '';
     const gl = this.gl;
-    const { width, height, fb } = this.transitionState?.mix ?? this.glyphTarget;
+    const { width, height, fb } = this.shown ?? this.glyphTarget;
     const px = new Uint8Array(width * height * 4);
     gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
     gl.readBuffer(gl.COLOR_ATTACHMENT0);
@@ -571,6 +585,7 @@ export class Rummy {
       glow: createProgram(gl, FULLSCREEN_VS, GLOW_FS),
       composite: createProgram(gl, FULLSCREEN_VS, COMPOSITE_FS),
       mix: createProgram(gl, FULLSCREEN_VS, MIX_FS),
+      persist: createProgram(gl, FULLSCREEN_VS, PERSIST_FS),
     };
     this.prepareSource();
     this.exposureTargets = [createTarget(gl, 1, 1), createTarget(gl, 1, 1)];
@@ -598,6 +613,7 @@ export class Rummy {
       ...(this.glowTargets ?? []),
       this.glyphTarget,
       this.lumaTarget,
+      ...(this.persistTargets ?? []),
     ]) {
       deleteTarget(gl, t);
     }
@@ -606,6 +622,8 @@ export class Rummy {
     this.atlasTex = this.shapesTex = this.sourceTex = null;
     this.sceneTargets = this.exposureTargets = this.glowTargets = null;
     this.lumaTarget = this.glyphTarget = null;
+    this.persistTargets = null;
+    this.shown = null;
   }
 
   /**
@@ -750,6 +768,9 @@ export class Rummy {
     if (this.glyphTarget?.width !== columns || this.glyphTarget?.height !== rows) {
       deleteTarget(gl, this.glyphTarget);
       deleteTarget(gl, this.lumaTarget);
+      for (const t of this.persistTargets ?? []) deleteTarget(gl, t);
+      this.persistTargets = null;
+      this.shown = null;
       for (const t of this.glowTargets ?? []) deleteTarget(gl, t);
       this.glyphTarget = createTarget(gl, columns, rows, { attachments: 2 });
       this.lumaTarget = createTarget(gl, columns, rows, { mipmaps: true });
@@ -779,6 +800,7 @@ export class Rummy {
   private invalidate(): void {
     this.dirty = true;
     this.accumFrame = 0;
+    this.persistFresh = true;
     this.schedule();
   }
 
@@ -1060,6 +1082,40 @@ export class Rummy {
       shown = tr.mix;
     }
 
+    // 3c. Persistence: last frame's glyphs linger, fading, where they outshine this one.
+    const still = o.respectReducedMotion && this.reducedMotion;
+    if (o.persistence > 0 && !still && this.moving) {
+      if (!this.persistTargets) {
+        this.persistTargets = [
+          createTarget(gl, glyphs.width, glyphs.height, { attachments: 2 }),
+          createTarget(gl, glyphs.width, glyphs.height, { attachments: 2 }),
+        ];
+        this.persistFresh = true;
+      }
+      const prevP = this.persistTargets[this.persistIndex];
+      this.persistIndex = 1 - this.persistIndex;
+      const next = this.persistTargets[this.persistIndex];
+      const pp = programs.persist;
+      this.pass(next, pp);
+      this.bind(0, shown.textures[0], pp.u.uGlyphs);
+      this.bind(1, shown.textures[1], pp.u.uCells);
+      this.bind(2, prevP.textures[0], pp.u.uPrevGlyphs);
+      this.bind(3, prevP.textures[1], pp.u.uPrevCells);
+      this.bind(4, this.shapesTex, pp.u.uShapes);
+      // Frame-rate independent: `persistence` is what survives 1/60 s.
+      const frames = (this.dt || 1 / 60) * 60;
+      gl.uniform1f(pp.u.uDecay, Math.pow(Math.min(o.persistence, 0.99), frames));
+      gl.uniform1f(pp.u.uFade, (1.5 / 255) * frames);
+      gl.uniform1i(pp.u.uFresh, this.persistFresh ? 1 : 0);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      this.persistFresh = false;
+      shown = next;
+    } else {
+      this.persistFresh = true;
+    }
+
+    this.shown = shown;
+
     // 4. Glow: blur the cells' light at cell resolution.
     if (glow) {
       const wp = programs.glow;
@@ -1146,6 +1202,7 @@ export class Rummy {
     const t = this.transitionState;
     if (!t) return;
     this.transitionState = null;
+    if (this.shown === t.mix) this.shown = null;
     deleteTarget(this.gl, t.from);
     deleteTarget(this.gl, t.mix);
     t.resolve();
