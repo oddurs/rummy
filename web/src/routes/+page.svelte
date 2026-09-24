@@ -14,6 +14,7 @@
     ...looks.phosphor.options,
     scene: scenes.terrain,
     intro: 'type',
+    pointer: true,
     offset,
   });
 

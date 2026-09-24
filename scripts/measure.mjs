@@ -10,6 +10,7 @@
  *   governor     sheds detail under load, keeps the page responsive, recovers
  *   persistence  trails of the same length at any frame rate, none under reduced motion
  *   intro        each style reveals and lands on the full frame; none under reduced motion
+ *   pointer      lens, ripple and shockwave act locally; none under reduced motion
  *   exposure     auto-exposure holds still on a steady source and settles
  *                after a cut without overshooting
  *
@@ -147,6 +148,22 @@ await chrome.emulateMedia({ 'prefers-reduced-motion': 'reduce' });
 const calmIntro = await chrome.evaluate(`window.__shots.introCheck('boot')`);
 await chrome.emulateMedia({ 'prefers-reduced-motion': 'no-preference' });
 check(calmIntro.first === 1, 'under reduced motion there is no intro: the first frame is complete');
+
+// --- pointer effects ----------------------------------------------------------------------
+console.log('\npointer effects on the globe, against a twin without them');
+const fx = {};
+for (const e of ['ripple', 'lens', 'shockwave']) {
+  fx[e] = await chrome.evaluate(`window.__shots.pointerCheck('${e}')`);
+  console.log(`  ${e.padEnd(9)} ${(fx[e].changed * 100).toFixed(1)}% of cells changed, ${(fx[e].near * 100).toFixed(0)}% of them near the pointer; mean radius ${fx[e].radiusEarly.toFixed(1)} → ${fx[e].radiusLate.toFixed(1)} cells`);
+}
+check(fx.lens.changed > 0.01 && fx.lens.near > 0.95, 'the lens changes cells, all of them near the pointer');
+check(fx.shockwave.changed > 0.005 && fx.shockwave.radiusLate > fx.shockwave.radiusEarly * 2, 'a shockwave ring expands from the click');
+check(fx.ripple.changed > 0.01, 'ripples follow the pointer');
+await chrome.emulateMedia({ 'prefers-reduced-motion': 'reduce' });
+let calmFx = 0;
+for (const e of ['ripple', 'lens', 'shockwave']) calmFx += (await chrome.evaluate(`window.__shots.pointerCheck('${e}')`)).changed;
+await chrome.emulateMedia({ 'prefers-reduced-motion': 'no-preference' });
+check(calmFx === 0, 'no pointer effects under reduced motion');
 
 // --- exposure --------------------------------------------------------------------
 const exp = await chrome.evaluate('window.__shots.exposure()');

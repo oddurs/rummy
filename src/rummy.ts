@@ -59,6 +59,17 @@ export type IntroStyle = 'type' | 'scan' | 'boot';
 const INTROS: Record<IntroStyle, number> = { type: 5, scan: 6, boot: 7 };
 const INTRO_MS = 800;
 
+export interface PointerEffects {
+  /** Rings spreading from the pointer's path, 0..1. */
+  ripple: number;
+  /** A 2x magnifier under the pointer, 0..1. */
+  lens: number;
+  /** Lens radius, as a share of the canvas height. */
+  lensRadius: number;
+  /** One expanding ring on click or tap, 0..1. */
+  shockwave: number;
+}
+
 export interface CrtOptions {
   /** Barrel distortion, 0..1. */
   curvature: number;
@@ -143,6 +154,12 @@ export interface RummyOptions {
   /** Track the pointer and feed it to scenes as uMouse. */
   mouse: boolean;
   /**
+   * Pointer effects that work on any scene, by bending where cells sample it.
+   * `true` for a gentle preset. Touch works (a tap is a click). Off under
+   * prefers-reduced-motion.
+   */
+  pointer: boolean | Partial<PointerEffects>;
+  /**
    * Feed page scroll to scenes as uScroll: 0 while the canvas top is at the
    * viewport top, 1 once it has scrolled out. `false` holds it at 0; a number
    * drives it yourself (a scrubber, a scroll timeline of your own). Held at 0
@@ -180,6 +197,10 @@ export interface RummyOptions {
 
 export const crtPreset: CrtOptions = { curvature: 0.5, vignette: 0.6, mask: 0.2, fringe: 0.75, flicker: 0.25 };
 const noCrt: CrtOptions = { curvature: 0, vignette: 0, mask: 0, fringe: 0, flicker: 0 };
+export const pointerPreset: PointerEffects = { ripple: 0.6, lens: 0, lensRadius: 0.22, shockwave: 0.8 };
+const noPointer: PointerEffects = { ripple: 0, lens: 0, lensRadius: 0.22, shockwave: 0 };
+/** How long pointer effects keep animating after the last movement, in ms. */
+const POINTER_FADE_MS = 2500;
 
 export const defaults: RummyOptions = {
   scene: ring,
@@ -213,6 +234,7 @@ export const defaults: RummyOptions = {
   maxFps: 0,
   timeScale: 1,
   mouse: true,
+  pointer: false,
   scroll: true,
   offset: [0, 0],
   intro: false,
@@ -365,6 +387,13 @@ export class Rummy {
   private mouse: [number, number] = [0, 0];
   private mouseTarget: [number, number] = [0, 0];
   private scroll = 0;
+  // Pointer effects: recent positions (uv, y up) with timestamps, a shockwave, the lens.
+  private trail: { u: number; v: number; t: number }[] = [];
+  private shock: { u: number; v: number; t: number } | null = null;
+  private pointerUv: [number, number] | null = null;
+  private pointerAt = -Infinity;
+  /** Effects clock, in seconds: advances with each drawn frame, so step() is deterministic. */
+  private fxTime = 0;
   private onscreen = true;
   private playing = true;
   private dirty = true;
@@ -412,6 +441,7 @@ export class Rummy {
     }
 
     window.addEventListener('pointermove', this.onPointer, { passive: true });
+    window.addEventListener('pointerdown', this.onPointer, { passive: true });
     canvas.addEventListener('webglcontextlost', this.onContextLost);
     canvas.addEventListener('webglcontextrestored', this.onContextRestored);
     this.watchFont();
@@ -582,6 +612,7 @@ export class Rummy {
     this.intersectionObserver?.disconnect();
     this.motionQuery?.removeEventListener('change', this.onMotionChange);
     window.removeEventListener('pointermove', this.onPointer);
+    window.removeEventListener('pointerdown', this.onPointer);
     this.canvas.removeEventListener('webglcontextlost', this.onContextLost);
     this.canvas.removeEventListener('webglcontextrestored', this.onContextRestored);
     this.release();
@@ -831,7 +862,13 @@ export class Rummy {
   }
 
   private get moving(): boolean {
-    return this.animating || this.stepping || this.transitionState !== null || this.sourceIsLive();
+    return (
+      this.animating ||
+      this.stepping ||
+      this.transitionState !== null ||
+      this.sourceIsLive() ||
+      (this.pointerEffects() !== null && performance.now() - this.pointerAt < POINTER_FADE_MS)
+    );
   }
 
   private get refining(): boolean {
@@ -927,6 +964,37 @@ export class Rummy {
         this.allocateTargets();
       }
     }
+  }
+
+  /** Pointer-effect uniforms for the glyph pass (uWarp = 0 when nothing is active). */
+  private applyPointer(gp: Program, aspect: number, grid: Target): void {
+    const gl = this.gl;
+    const fx = this.pointerEffects();
+    this.fxTime += this.dt;
+    const now = this.fxTime;
+    let warp = 0;
+    if (fx) {
+      const trail = new Float32Array(8 * 3).fill(-1);
+      if (fx.ripple > 0) {
+        this.trail = this.trail.filter((p) => now - p.t < POINTER_FADE_MS / 1000);
+        this.trail.forEach((p, i) => trail.set([p.u, p.v, now - p.t], i * 3));
+        if (this.trail.length) warp |= 1;
+      }
+      gl.uniform3fv(gp.u.uTrail, trail);
+      gl.uniform1f(gp.u.uRipple, fx.ripple);
+      if (fx.lens > 0 && this.pointerUv) {
+        warp |= 2;
+        gl.uniform4f(gp.u.uLens, this.pointerUv[0], this.pointerUv[1], fx.lensRadius, fx.lens);
+      }
+      const shockAge = this.shock ? now - this.shock.t : -1;
+      if (fx.shockwave > 0 && this.shock && shockAge < 2) {
+        warp |= 4;
+        gl.uniform4f(gp.u.uShock, this.shock.u, this.shock.v, shockAge, fx.shockwave);
+      }
+    }
+    gl.uniform1i(gp.u.uWarp, warp);
+    gl.uniform2f(gp.u.uRegions, grid.width * 2, grid.height * 3);
+    gl.uniform1f(gp.u.uGridAspect, aspect);
   }
 
   /** Where uScroll is heading: one layout read, only from the running loop. */
@@ -1064,6 +1132,7 @@ export class Rummy {
     gl.uniform1f(gp.u.uEdges, o.edges);
     gl.uniform1f(gp.u.uEdgeThreshold, o.edgeThreshold);
     gl.uniform1f(gp.u.uCellAspect, atlas.cellHeight / atlas.cellWidth);
+    this.applyPointer(gp, aspect, glyphs);
     gl.uniform1f(gp.u.uStrokeInk, atlas.strokeInk);
     const fg = parseColor(o.fg);
     const bg = parseColor(o.bg);
@@ -1306,13 +1375,36 @@ export class Rummy {
   // --- events --------------------------------------------------------------
 
   private onPointer = (e: PointerEvent): void => {
-    if (!this.opts.mouse) return;
+    if (!this.opts.mouse && !this.pointerEffects()) return;
     const r = this.canvas.getBoundingClientRect();
     if (r.width === 0 || r.height === 0) return;
     const x = ((e.clientX - r.left) / r.width) * 2 - 1;
     const y = 1 - ((e.clientY - r.top) / r.height) * 2;
-    this.mouseTarget = [Math.max(-1, Math.min(1, x)), Math.max(-1, Math.min(1, y))];
+    if (this.opts.mouse) this.mouseTarget = [Math.max(-1, Math.min(1, x)), Math.max(-1, Math.min(1, y))];
+    if (!this.pointerEffects()) return;
+    const inside = Math.abs(x) <= 1 && Math.abs(y) <= 1;
+    const u = (x + 1) / 2;
+    const v = (y + 1) / 2;
+    this.pointerUv = inside ? [u, v] : null;
+    if (!inside) return;
+    this.pointerAt = performance.now();
+    const now = this.fxTime;
+    if (e.type === 'pointerdown') this.shock = { u, v, t: now };
+    // A trail point every 40 ms is enough for smooth rings.
+    const last = this.trail[this.trail.length - 1];
+    if (!last || now - last.t > 0.04) {
+      this.trail.push({ u, v, t: now });
+      if (this.trail.length > 8) this.trail.shift();
+    }
+    this.schedule();
   };
+
+  /** Pointer effects in force, or null when off (option off, or reduced motion). */
+  private pointerEffects(): PointerEffects | null {
+    const { pointer, respectReducedMotion } = this.opts;
+    if (!pointer || (respectReducedMotion && this.reducedMotion)) return null;
+    return pointer === true ? pointerPreset : { ...noPointer, ...pointer };
+  }
 
   private onMotionChange = (e: MediaQueryListEvent): void => {
     this.reducedMotion = e.matches;
