@@ -5,7 +5,7 @@
  * Open /shots.html to look at it; scripts/shots.mjs drives the same page
  * headlessly through `window.__shots` to write PNGs and diffs.
  */
-import { Rummy, charsets, defaults, palettes, scenes, type RummyOptions, type SceneName, type TransitionStyle } from '../src';
+import { Rummy, charsets, defaults, palettes, scenes, type IntroStyle, type RummyOptions, type SceneName, type TransitionStyle } from '../src';
 import { lookDefaults, looks, type LookName } from './looks';
 import { buildAtlas, normalizeCharset } from '../src/atlas';
 
@@ -65,6 +65,8 @@ interface Shot {
   options: Partial<RummyOptions>;
   /** CSS size; default 480x300. */
   size?: [number, number];
+  /** Capture an intro partway (a fresh renderer, since intros run once). */
+  intro?: { style: IntroStyle; at: number };
   /** Seconds of motion to step through after the still, for effects that need it. */
   motion?: number;
   /** Freeze a transition to another scene partway through. */
@@ -152,6 +154,13 @@ shots.push(
     options: { ...lookDefaults, ...looks.scene.options },
     transition: { to: 'globe', style, at: 0.5 },
   })),
+  // Intros, halfway.
+  ...(['type', 'scan', 'boot'] as IntroStyle[]).map((style): Shot => ({
+    name: `intro-${style}`,
+    scene: 'globe',
+    options: { ...phosphor },
+    intro: { style, at: 0.5 },
+  })),
   // Persistence needs motion: a second of it, with and without the afterglow.
   { name: 'blobs-persistence', scene: 'blobs', options: { ...lookDefaults, ...looks.crt.options, crt: false }, motion: 1 },
   {
@@ -231,6 +240,20 @@ async function ready(): Promise<void> {
 async function render(name: string): Promise<string> {
   const shot = shots.find((s) => s.name === name);
   if (!shot) throw new Error(`no shot named ${name}`);
+  if (shot.intro) {
+    const c = document.createElement('canvas');
+    c.style.cssText = `position:fixed;left:0;top:0;width:${(shot.size ?? [480, 300])[0]}px;height:${(shot.size ?? [480, 300])[1]}px;`;
+    document.body.append(c);
+    const r = new Rummy(c, { ...base, ...shot.options, intro: shot.intro.style, scene: scenes[shot.scene as SceneName] });
+    r.pause();
+    r.resize();
+    r.time = Rummy.stillOf(scenes[shot.scene as SceneName]);
+    for (let i = 0; i < Math.round(shot.intro.at * 0.8 * 60); i++) r.step(1 / 60);
+    const url = c.toDataURL('image/png');
+    r.destroy();
+    c.remove();
+    return url;
+  }
   const scene =
     shot.scene === 'source' ? dark : shot.scene === 'photo' ? photo : shot.scene in testScenes ? testScenes[shot.scene as keyof typeof testScenes] : scenes[shot.scene as SceneName];
   const options = { ...base, ...shot.options, scene };
@@ -805,6 +828,38 @@ async function persistCheck(persistence: number, fps: number): Promise<number> {
   return lit;
 }
 
+/**
+ * Intro: share of the final frame's cells shown at the start, halfway and end
+ * of each style; with reduced motion emulated, the first frame is complete.
+ */
+async function introCheck(intro: IntroStyle): Promise<{ first: number; half: number; end: number; resolvedFrames: number }> {
+  const c = document.createElement('canvas');
+  c.style.cssText = 'position:fixed;left:0;top:0;width:480px;height:300px;';
+  document.body.append(c);
+  const r = new Rummy(c, { ...base, respectReducedMotion: true, intro, antialias: 0, scene: testScenes.diamond });
+  r.pause();
+  r.resize();
+  const frames: string[] = [];
+  for (let i = 0; i < 60; i++) {
+    r.step(1 / 60);
+    frames.push(r.toText());
+  }
+  const last = frames[frames.length - 1];
+  const inked = (x: string) => {
+    let n = 0, total = 0;
+    for (let i = 0; i < x.length; i++) {
+      if (last[i] === ' ' || last[i] === '\n') continue;
+      total++;
+      if (x[i] === last[i]) n++;
+    }
+    return n / Math.max(total, 1);
+  };
+  const resolvedFrames = frames.findIndex((f) => f === last);
+  r.destroy();
+  c.remove();
+  return { first: inked(frames[0]), half: inked(frames[23]), end: inked(last), resolvedFrames };
+}
+
 /** Frame rate of a playing renderer under given options, in real time. For sizing the governor's levers. */
 async function fpsUnder(options: Partial<RummyOptions>, seconds = 2): Promise<number> {
   const c = document.createElement('canvas');
@@ -921,6 +976,7 @@ declare global {
       governorCheck: typeof governorCheck;
       fpsUnder: typeof fpsUnder;
       persistCheck: typeof persistCheck;
+      introCheck: typeof introCheck;
     };
   }
 }
@@ -944,6 +1000,7 @@ window.__shots = {
   governorCheck,
   fpsUnder,
   persistCheck,
+  introCheck,
 };
 
 // Headless runs drive the page themselves; people get the sheet.

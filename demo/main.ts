@@ -132,7 +132,7 @@ function syncForm(s: State): void {
   sceneLabel.textContent = s.scene === 'media' ? 'dropped-file' : s.scene;
 }
 
-const rummy = new Rummy(canvas, toOptions(state));
+const rummy = new Rummy(canvas, { ...toOptions(state), intro: 'type' });
 if (state.paused) rummy.pause();
 applyLook(state.look);
 syncForm(state);

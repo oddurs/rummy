@@ -13,6 +13,7 @@
     ...lookDefaults,
     ...looks.phosphor.options,
     scene: scenes.terrain,
+    intro: 'type',
     offset,
   });
 

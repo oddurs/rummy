@@ -180,6 +180,7 @@ All options are optional and can be changed later with `rummy.set()`.
 | `crt` | `false` | `true` for a preset, or `{ curvature, vignette, mask, fringe, flicker }` |
 | `scanlines` | `0` | Darken alternate pixel rows |
 | `offset` | `[0, 0]` | Shift the focal point, e.g. to sit beside your headline |
+| `intro` | `false` | How the first frames arrive: `'type'` (reading order, behind a cursor), `'scan'`, `'boot'`. Never delays first paint; skipped under reduced motion |
 | `maxFps` | `0` | Cap frame rate (0 = display rate) |
 | `maxDpr` | `2` | Device pixel ratio cap |
 | `timeScale` | `1` | |

@@ -94,13 +94,13 @@ Motion that looks intentional. No glyph boil, transitions between scenes, scroll
 ### idea
 
 - [ ] [`0023`](https://github.com/oddurs/rummy/blob/main/cairn/items/0023-pointer-as-a-force-ripples-lens-shockwave.md) Pointer as a force: ripples, lens, shockwave <sup>feature · p2 · motion</sup>
-- [ ] [`0024`](https://github.com/oddurs/rummy/blob/main/cairn/items/0024-an-intro-worth-the-first-second-type-on-reveal.md) An intro worth the first second: type-on reveal <sup>feature · p2 · motion</sup>
 
 ### in review
 
 - [ ] [`0018`](https://github.com/oddurs/rummy/blob/main/cairn/items/0018-stop-glyph-boil-with-temporal-hysteresis.md) Stop glyph boil with temporal hysteresis <sup>look · p0 · motion</sup>
 - [ ] [`0019`](https://github.com/oddurs/rummy/blob/main/cairn/items/0019-phosphor-persistence-trails-that-decay-at-cell-resolution.md) Phosphor persistence: trails that decay at cell resolution <sup>look · p2 · motion</sup>
 - [ ] [`0022`](https://github.com/oddurs/rummy/blob/main/cairn/items/0022-transitions-between-scenes-decode-wipe-rain.md) Transitions between scenes: decode, wipe, rain <sup>feature · p1 · motion</sup>
+- [ ] [`0024`](https://github.com/oddurs/rummy/blob/main/cairn/items/0024-an-intro-worth-the-first-second-type-on-reveal.md) An intro worth the first second: type-on reveal <sup>feature · p2 · motion</sup>
 - [ ] [`0025`](https://github.com/oddurs/rummy/blob/main/cairn/items/0025-frame-time-governor-shed-detail-before-dropping-frames.md) Frame-time governor: shed detail before dropping frames <sup>perf · p1 · speed</sup>
 
 ### shipped
