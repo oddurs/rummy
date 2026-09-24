@@ -55,6 +55,10 @@ interface Transition {
 
 const STYLES: Record<TransitionStyle | 'dissolve', number> = { decode: 0, wipe: 1, rain: 2, dissolve: 3 };
 
+export type IntroStyle = 'type' | 'scan' | 'boot';
+const INTROS: Record<IntroStyle, number> = { type: 5, scan: 6, boot: 7 };
+const INTRO_MS = 800;
+
 export interface CrtOptions {
   /** Barrel distortion, 0..1. */
   curvature: number;
@@ -147,6 +151,12 @@ export interface RummyOptions {
   scroll: boolean | number;
   /** Shift the scene's focal point, in screen() units (y spans -1..1). */
   offset: [number, number];
+  /**
+   * How the first frames arrive: `type` fills in reading order behind a cursor,
+   * `scan` sweeps a line down, `boot` powers cells up at random. Never delays
+   * the first paint; skipped under prefers-reduced-motion.
+   */
+  intro: IntroStyle | false;
   /** Stop rendering while the canvas is off screen. */
   pauseOffscreen: boolean;
   /** Honour prefers-reduced-motion by rendering a still frame. */
@@ -205,6 +215,7 @@ export const defaults: RummyOptions = {
   mouse: true,
   scroll: true,
   offset: [0, 0],
+  intro: false,
   pauseOffscreen: true,
   respectReducedMotion: true,
   profile: false,
@@ -305,6 +316,10 @@ export class Rummy {
   private transitionState: Transition | null = null;
   /** True while transition() applies its own options through set(). */
   private transitioning = false;
+  /** The intro still has to run (once, on the first frame). */
+  private introPending = true;
+  /** The inkiest glyph in the charset: the typing cursor. */
+  private cursorIndex = 0;
   private sceneTargets: [Target, Target] | null = null;
   private sceneIndex = 0;
   private lumaTarget: Target | null = null;
@@ -708,6 +723,11 @@ export class Rummy {
     const gl = this.gl;
     const atlas = buildAtlas(normalizeCharset(this.opts.charset), this.fontSpec());
     this.atlas = atlas;
+    let best = 0;
+    for (let i = 1; i < atlas.chars.length; i++) {
+      if (atlas.shapes[(atlas.chars.length + i) * 4 + 2] > atlas.shapes[(atlas.chars.length + best) * 4 + 2]) best = i;
+    }
+    this.cursorIndex = best;
 
     if (this.atlasTex) gl.deleteTexture(this.atlasTex);
     this.atlasTex = createTexture(gl, {
@@ -1060,9 +1080,28 @@ export class Rummy {
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     timer?.mark('glyph');
 
+    // The intro is a transition from a blank screen, started on the first frame.
+    if (this.introPending) {
+      this.introPending = false;
+      const calmIntro = o.respectReducedMotion && this.reducedMotion;
+      if (o.intro && !calmIntro && !this.transitionState) {
+        const from = createTarget(gl, glyphs.width, glyphs.height, { attachments: 2 });
+        const mix = createTarget(gl, glyphs.width, glyphs.height, { attachments: 2 });
+        this.transitionState = { from, mix, style: INTROS[o.intro], elapsed: 0, duration: INTRO_MS, resolve: () => {} };
+      }
+    }
+
     // 3b. Transition: mix the held grid with this frame's, cell by cell.
     let shown = glyphs;
     const tr = this.transitionState;
+    if (tr && tr.style >= INTROS.type && (tr.from.width !== glyphs.width || tr.from.height !== glyphs.height)) {
+      // Intros read nothing from the held grid, so a resize mid-intro (a web
+      // font arriving after the first frame, typically) just resizes buffers.
+      deleteTarget(gl, tr.from);
+      deleteTarget(gl, tr.mix);
+      tr.from = createTarget(gl, glyphs.width, glyphs.height, { attachments: 2 });
+      tr.mix = createTarget(gl, glyphs.width, glyphs.height, { attachments: 2 });
+    }
     if (tr && (tr.from.width !== glyphs.width || tr.from.height !== glyphs.height)) {
       this.endTransition(); // the grid was resized; nothing sensible to mix
     } else if (tr) {
@@ -1078,6 +1117,7 @@ export class Rummy {
       gl.uniform1f(mp.u.uTick, Math.floor(tr.elapsed / 50));
       gl.uniform1i(mp.u.uCount, atlas.chars.length);
       gl.uniform2i(mp.u.uGrid, glyphs.width, glyphs.height);
+      gl.uniform1i(mp.u.uCursor, this.cursorIndex);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
       shown = tr.mix;
     }

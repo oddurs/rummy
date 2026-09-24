@@ -536,7 +536,8 @@ uniform sampler2D uFromCells;
 uniform sampler2D uToGlyphs;
 uniform sampler2D uToCells;
 uniform float uProgress;   // 0..1
-uniform int uStyle;        // 0 decode, 1 wipe, 2 rain, 3 dissolve, 4 copy "to"
+uniform int uStyle;        // 0 decode, 1 wipe, 2 rain, 3 dissolve, 4 copy "to", 5 type, 6 scan, 7 boot
+uniform int uCursor;       // the inkiest glyph, drawn as the typing cursor
 uniform float uTick;       // changes ~20 times a second, reseeding the scramble
 uniform int uCount;
 uniform ivec2 uGrid;
@@ -574,11 +575,41 @@ void main() {
     float down = 1.0 - (float(cell.y) + 0.5) / float(uGrid.y);
     t = hash(vec2(float(cell.x), 7.0)) * 0.45 + down * 0.47;
     band = 0.08;
-  } else {                    // dissolve: no scramble, for reduced motion
+  } else if (uStyle == 3) {   // dissolve: no scramble, for reduced motion
     t = r * 0.95;
     band = 0.0;
+  } else {
+    // Intros: from a blank screen. Row 0 is the top.
+    float row = float(uGrid.y - 1 - cell.y);
+    float cells = float(uGrid.x * uGrid.y);
+    if (uStyle == 5) {        // type: reading order, behind a cursor
+      t = (row * float(uGrid.x) + float(cell.x)) / cells * 0.97;
+      band = 2.0 / cells;
+    } else if (uStyle == 6) { // scan: a bright line sweeps down
+      t = row / float(uGrid.y) * 0.9;
+      band = 0.05;
+    } else {                  // boot: cells power up at random, flickering
+      t = r * 0.8;
+      band = 0.15;
+    }
   }
   float p = uProgress * (1.0 + band);
+
+  if (uStyle >= 5) {
+    // The background is always the live one: a blank screen, not a hole.
+    outCell = c1;
+    if (p < t) {
+      outGlyph = vec4(0.0);
+    } else if (p < t + band) {
+      vec3 lit = min(g1.gba * 1.35 + 0.08, vec3(1.0));
+      if (uStyle == 5) outGlyph = vec4(float(uCursor) / 255.0, lit);
+      else if (uStyle == 6) outGlyph = g1.r > 0.5 / 255.0 ? vec4(g1.r, lit) : vec4(0.0);
+      else outGlyph = hash(vec2(cell) + uTick) > 0.5 ? vec4(g1.r, lit) : vec4(0.0);
+    } else {
+      outGlyph = g1;
+    }
+    return;
+  }
 
   bool empty = g0.r < 0.5 / 255.0 && g1.r < 0.5 / 255.0;
   if (p < t) {

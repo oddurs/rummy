@@ -9,6 +9,7 @@
  *   transitions  resolve, end on the live frame, and don't jump when interrupted
  *   governor     sheds detail under load, keeps the page responsive, recovers
  *   persistence  trails of the same length at any frame rate, none under reduced motion
+ *   intro        each style reveals and lands on the full frame; none under reduced motion
  *   exposure     auto-exposure holds still on a steady source and settles
  *                after a cut without overshooting
  *
@@ -134,6 +135,18 @@ console.log(`\npersistence: columns spanned by a moving dot and its trail: off $
 check(lit.at60 > lit.off * 1.5, 'persistence leaves a trail');
 check(Math.abs(lit.at30 - lit.at60) / lit.at60 < 0.25, 'the trail is about as long at 30 fps as at 60 (frame-rate independent)');
 check(lit.reduced <= lit.off * 1.1, 'no trail under reduced motion');
+
+// --- intro ------------------------------------------------------------------------------
+console.log('\nintro: share of the final frame shown at the first frame, halfway, and when it lands');
+for (const style of ['type', 'scan', 'boot']) {
+  const it = await chrome.evaluate(`window.__shots.introCheck('${style}')`);
+  console.log(`  ${style.padEnd(5)} first ${(it.first * 100).toFixed(0)}%  halfway ${(it.half * 100).toFixed(0)}%  complete by frame ${it.resolvedFrames}`);
+  check(it.first < 0.2 && it.half > 0.2 && it.half < 0.9 && it.resolvedFrames >= 0 && it.resolvedFrames <= 55, `${style}: reveals over ~0.8 s and lands on the full frame`);
+}
+await chrome.emulateMedia({ 'prefers-reduced-motion': 'reduce' });
+const calmIntro = await chrome.evaluate(`window.__shots.introCheck('boot')`);
+await chrome.emulateMedia({ 'prefers-reduced-motion': 'no-preference' });
+check(calmIntro.first === 1, 'under reduced motion there is no intro: the first frame is complete');
 
 // --- exposure --------------------------------------------------------------------
 const exp = await chrome.evaluate('window.__shots.exposure()');
