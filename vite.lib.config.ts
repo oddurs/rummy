@@ -6,6 +6,7 @@ export default defineConfig({
   plugins: [glsl()],
   build: {
     lib: { entry: 'src/index.ts', formats: ['es'], fileName: () => 'rummy.js' },
+    // The profiler (src/timer.ts) is imported lazily and ships as its own chunk.
     emptyOutDir: false,
     target: 'es2022',
     sourcemap: true,

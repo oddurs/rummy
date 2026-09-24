@@ -95,6 +95,8 @@ const photo = new Image();
 photo.src = 'fixtures/aldrin.jpg';
 
 const base: Partial<RummyOptions> = {
+  // Deterministic output: the governor would change detail with frame timing.
+  adaptive: false,
   maxDpr: 1,
   mouse: false,
   pauseOffscreen: false,
@@ -646,6 +648,122 @@ async function transitionCheck(): Promise<{
   };
 }
 
+/**
+ * Governor, in real time on SwiftShader (a very slow GPU): a large terrain
+ * should step down and get faster; once the canvas is small it should find its
+ * way back up without flapping.
+ */
+async function governorCheck(): Promise<{
+  fixedFps: number;
+  governedFps: number;
+  fixedDrawn: number;
+  governedDrawn: number;
+  levelSlow: number;
+  levelUnderLoad: number;
+  levelAfterRecovery: number;
+  changesWhileSlow: number;
+  levelFixed: number;
+  load: string;
+}> {
+  const c = document.createElement('canvas');
+  c.style.cssText = 'position:fixed;left:0;top:0;width:1280px;height:720px;';
+  document.body.append(c);
+  const opts = { ...base, ...lookDefaults, ...looks.phosphor.options, scene: scenes.terrain, pauseOffscreen: false };
+  // Page frames (how responsive everything else on the page stays) and
+  // rummy's own drawn frames (stats.fps), over a window.
+  const run = async (r: Rummy, seconds: number) => {
+    const t0 = performance.now();
+    let frames = 0, changes = 0, last = r.stats.level;
+    const drawn: number[] = [];
+    while (performance.now() - t0 < seconds * 1000) {
+      await frame();
+      frames++;
+      drawn.push(r.stats.fps);
+      if (r.stats.level !== last) changes++;
+      last = r.stats.level;
+    }
+    const tail = drawn.slice(Math.floor(drawn.length / 2));
+    return {
+      fps: (frames * 1000) / (performance.now() - t0),
+      drawn: tail.reduce((x, y) => x + y, 0) / Math.max(tail.length, 1),
+      changes,
+    };
+  };
+  // Baseline, governor off: the smallest load that is genuinely slow (under
+  // 30 fps) on this machine, found by growing the canvas. Just past the limit
+  // is where a governor has to work; far past it no level can help, and with
+  // headroom there is nothing to test. The same test then fits a fast laptop
+  // and a slow CI runner.
+  const sizes: [number, number][] = [
+    [480, 270],
+    [640, 360],
+    [960, 540],
+    [1280, 720],
+    [1600, 900],
+  ];
+  const load: Partial<RummyOptions> = { fontSize: 10, quality: 2 };
+  let size = sizes[0];
+  let fixedRun = { fps: 0, drawn: 0, changes: 0 };
+  let levelFixed = 0;
+  for (const sz of sizes) {
+    size = sz;
+    c.style.width = `${sz[0]}px`;
+    c.style.height = `${sz[1]}px`;
+    const fixed = new Rummy(c, { ...opts, ...load, adaptive: false });
+    // Long enough for SwiftShader to finish compiling before timing starts.
+    await run(fixed, 2);
+    fixedRun = await run(fixed, 3);
+    levelFixed = fixed.stats.level;
+    fixed.destroy();
+    if (fixedRun.fps < 30) break;
+  }
+  Object.assign(opts, load);
+  // Governor on, same load.
+  const r = new Rummy(c, { ...opts, adaptive: true });
+  const settle = await run(r, 6);
+  const levelSlow = r.stats.level;
+  const governedRun = await run(r, 3);
+  const levelUnderLoad = r.stats.level;
+  // Make it cheap and let it climb back.
+  c.style.width = '240px';
+  c.style.height = '135px';
+  r.resize();
+  await run(r, 14);
+  const levelAfterRecovery = r.stats.level;
+  r.destroy();
+  c.remove();
+  return {
+    fixedFps: fixedRun.fps,
+    governedFps: governedRun.fps,
+    fixedDrawn: fixedRun.drawn,
+    governedDrawn: governedRun.drawn,
+    levelSlow,
+    levelUnderLoad,
+    levelAfterRecovery,
+    changesWhileSlow: settle.changes + governedRun.changes,
+    levelFixed,
+    load: `${size[0]}x${size[1]}, ${JSON.stringify(load)}`,
+  };
+}
+
+/** Frame rate of a playing renderer under given options, in real time. For sizing the governor's levers. */
+async function fpsUnder(options: Partial<RummyOptions>, seconds = 2): Promise<number> {
+  const c = document.createElement('canvas');
+  c.style.cssText = 'position:fixed;left:0;top:0;width:1280px;height:720px;';
+  document.body.append(c);
+  const r = new Rummy(c, { ...base, ...lookDefaults, ...looks.phosphor.options, scene: scenes.terrain, pauseOffscreen: false, adaptive: false, ...options });
+  for (let i = 0; i < 30; i++) await frame();
+  const t0 = performance.now();
+  let n = 0;
+  while (performance.now() - t0 < seconds * 1000) {
+    await frame();
+    n++;
+  }
+  r.destroy();
+  c.remove();
+  return (n * 1000) / (performance.now() - t0);
+}
+
 /** Reduced motion: a transition is a dissolve with no scramble. Run with the media feature emulated. */
 async function reducedTransitionCheck(): Promise<{ reduced: boolean; scramble: number }> {
   const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -741,6 +859,8 @@ declare global {
       scrollCheck: typeof scrollCheck;
       transitionCheck: typeof transitionCheck;
       reducedTransitionCheck: typeof reducedTransitionCheck;
+      governorCheck: typeof governorCheck;
+      fpsUnder: typeof fpsUnder;
     };
   }
 }
@@ -761,6 +881,8 @@ window.__shots = {
   scrollCheck,
   transitionCheck,
   reducedTransitionCheck,
+  governorCheck,
+  fpsUnder,
 };
 
 // Headless runs drive the page themselves; people get the sheet.

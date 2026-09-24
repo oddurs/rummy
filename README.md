@@ -116,7 +116,8 @@ new Rummy(canvas, { scene: pulse });
 ```
 
 Available in scenes: `uTime`, `uMouse` (−1..1, smoothed), `uScroll` (0 at the top of
-the canvas, 1 once it has scrolled out, smoothed), `uAspect`, `uResolution`,
+the canvas, 1 once it has scrolled out, smoothed), `uDetail` (1 = full; lowered by the
+frame-time governor, so scale loop counts with it), `uAspect`, `uResolution`,
 `uOffset`, and helpers `screen()`, `rot()`, `hash12()`, `hash13()`, `noise()`, `fbm()`
 (2D and 3D). Depth only matters for the `edges` silhouette effect; return a constant if
 you don't care.
@@ -185,6 +186,7 @@ All options are optional and can be changed later with `rummy.set()`.
 | `pauseOffscreen` | `true` | Stop when scrolled out of view |
 | `respectReducedMotion` | `true` | Hold the scene's still frame under `prefers-reduced-motion` |
 | `uniforms` | `{}` | Values for the scene's own uniforms; `set({ uniforms })` merges |
+| `adaptive` | `true` | Shed detail before dropping frames: 1× sampling, lower scene detail (`uDetail`), no glow, then 30 fps. `stats.level` shows where it is |
 | `profile` | `false` | Measure GPU time per pass into `stats.gpu`, and exposure into `stats.exposure` |
 
 Methods: `set(options)`, `transition(options, { style, duration })`, `play()`, `pause()`,

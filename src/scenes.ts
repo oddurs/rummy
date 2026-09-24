@@ -2,7 +2,9 @@
  * Built-in scenes. Each is a GLSL snippet defining `vec4 scene(vec2 uv)`
  * (rgb + depth in 0..1). They run at cell resolution, so a generous raymarch
  * budget is still cheap. Helpers available: rot, screen, noise, fbm, hash12/13,
- * and uniforms uTime, uMouse, uScroll, uAspect, uResolution, uOffset.
+ * and uniforms uTime, uMouse, uScroll, uDetail, uAspect, uResolution, uOffset.
+ * Scenes scale their expensive loops with uDetail, which the frame-time
+ * governor lowers when frames run late.
  *
  * `#define STILL t` marks each scene's composed moment: rummy starts there,
  * and it is the frame shown under prefers-reduced-motion.
@@ -42,7 +44,9 @@ vec4 scene(vec2 uv) {
   vec3 rd = normalize(vec3(p, -1.9));
   float t = 0.0;
   bool hit = false;
+  int steps = int(mix(32.0, 90.0, uDetail));
   for (int i = 0; i < 90; i++) {
+    if (i >= steps) break;
     float d = map(ro + rd * t);
     if (d < 0.001) { hit = true; break; }
     t += d;
@@ -108,10 +112,13 @@ vec4 scene(vec2 uv) {
   float tmax = rd.y > 0.0 ? min(40.0, (4.2 - ro.y) / rd.y) : min(40.0, -ro.y / rd.y);
   float t = 0.05;
   bool hit = rd.y < 0.0 && tmax < 40.0;
+  int steps = int(mix(28.0, 64.0, uDetail));
+  int octaves = uDetail < 0.5 ? 2 : 3;
   for (int i = 0; i < 64; i++) {
+    if (i >= steps) break;
     vec3 q = ro + rd * t;
-    // Three octaves to find the surface; the fourth only matters for shading.
-    float h = q.y - height(q.xz, 3);
+    // Few octaves to find the surface; the last only matters for shading.
+    float h = q.y - height(q.xz, octaves);
     if (h < 0.002 * t) { hit = true; break; }
     t += max(h * 0.55, 0.01);
     if (t > tmax) { t = tmax; break; }
@@ -166,7 +173,9 @@ vec4 scene(vec2 uv) {
   vec3 rd = normalize(vec3(p, -2.0));
   float t = 0.0;
   bool hit = false;
+  int steps = int(mix(28.0, 72.0, uDetail));
   for (int i = 0; i < 72; i++) {
+    if (i >= steps) break;
     float d = map(ro + rd * t);
     if (d < 0.001) { hit = true; break; }
     t += d;

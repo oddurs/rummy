@@ -4,7 +4,7 @@
  * dependencies; Node's built-in WebSocket speaks CDP.
  */
 import { spawn } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { extname, join } from 'node:path';
@@ -51,7 +51,22 @@ function chromePath() {
  * `gpu: false` (default) renders with SwiftShader, which is deterministic and
  * runs anywhere; `gpu: true` asks for the real GPU, for benchmarks.
  */
+/** Remove profiles left behind by runs that crashed or were killed (older than an hour). */
+function sweepStaleProfiles() {
+  const hour = Date.now() - 60 * 60 * 1000;
+  for (const name of readdirSync(tmpdir())) {
+    if (!name.startsWith('rummy-chrome-')) continue;
+    const dir = join(tmpdir(), name);
+    try {
+      if (statSync(dir).mtimeMs < hour) rmSync(dir, { recursive: true, force: true });
+    } catch {
+      // Another run's profile, or already gone.
+    }
+  }
+}
+
 export async function launch(url, { gpu = false, width = 1200, height = 900 } = {}) {
+  sweepStaleProfiles();
   const profile = mkdtempSync(join(tmpdir(), 'rummy-chrome-'));
   const graphics = gpu
     ? ['--enable-gpu', '--ignore-gpu-blocklist', '--enable-webgl', ...(process.platform === 'darwin' ? ['--use-angle=metal'] : [])]
