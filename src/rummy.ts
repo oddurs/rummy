@@ -23,7 +23,7 @@ import {
 } from './shaders';
 import { ascii } from './charsets';
 import { ring } from './scenes';
-import { GpuTimer, type GpuTimes } from './timer';
+import type { GpuTimer, GpuTimes } from './timer';
 
 /** GLSL defining `vec4 scene(vec2 uv)`, or any image/video/canvas to asciify. */
 export type SceneInput = string | TexImageSource;
@@ -147,6 +147,13 @@ export interface RummyOptions {
   /** Measure GPU time per pass into `stats.gpu` (where the browser allows). */
   profile: boolean;
   /**
+   * Shed detail before dropping frames. When frames run late the governor
+   * steps down, in order: lower scene detail (uDetail), a 30 fps cap, lower
+   * detail again. It probes back up when there is room. `stats.level` says
+   * where it is (0 = full).
+   */
+  adaptive: boolean;
+  /**
    * Values for uniforms the scene declares itself (`uniform float uSpeed;`).
    * `set({ uniforms })` merges into the current ones and never recompiles.
    */
@@ -193,6 +200,7 @@ export const defaults: RummyOptions = {
   pauseOffscreen: true,
   respectReducedMotion: true,
   profile: false,
+  adaptive: true,
   uniforms: {},
 };
 
@@ -209,6 +217,8 @@ export interface RummyStats {
   gpu: GpuTimes | null;
   /** Current exposure multiplier, when `profile` is on (read back each frame, so profiling only). */
   exposure: number | null;
+  /** Frame-time governor level: 0 = full detail, 3 = the most shed. */
+  level: number;
 }
 
 const isSource = (s: SceneInput): s is TexImageSource => typeof s !== 'string';
@@ -236,6 +246,18 @@ function stillOf(scene: SceneInput): number {
   return m ? Number(m[1]) : 0;
 }
 
+/** Governor levels, in the order detail is shed: scene detail, then frame rate. */
+// Ordered by what was measured to pay (pnpm measure, SwiftShader): 2x
+// supersampling back to 1x more than doubles the frame rate under load, glow is
+// worth ~10%, scene detail matters for raymarch-heavy scenes, and the 30 fps cap
+// is the last resort because it is the most visible.
+const LEVELS = [
+  { detail: 1, singleSample: false, glow: true, fps: 0 },
+  { detail: 0.6, singleSample: true, glow: true, fps: 0 },
+  { detail: 0.35, singleSample: true, glow: false, fps: 0 },
+  { detail: 0.35, singleSample: true, glow: false, fps: 30 },
+];
+
 /** Frames a still image refines over before the loop goes idle. */
 const REFINE_FRAMES = 16;
 
@@ -260,7 +282,7 @@ export class Rummy {
   static stillOf = stillOf;
 
   readonly canvas: HTMLCanvasElement;
-  readonly stats: RummyStats = { columns: 0, rows: 0, samples: 0, width: 0, height: 0, fps: 0, gpu: null, exposure: null };
+  readonly stats: RummyStats = { columns: 0, rows: 0, samples: 0, width: 0, height: 0, fps: 0, gpu: null, exposure: null, level: 0 };
 
   private opts: RummyOptions;
   private gl: WebGL2RenderingContext;
@@ -276,6 +298,15 @@ export class Rummy {
   private exposureIndex = 0;
   private glyphTarget: Target | null = null;
   private stepping = false;
+  // Frame-time governor state.
+  private level = 0;
+  private period = 1000 / 60;   // the display's frame period, learned from the fastest frames
+  private interval = 1000 / 60; // smoothed interval between drawn frames
+  private lateFor = 0;          // seconds frames have been running late
+  private fineFor = 0;          // seconds frames have been on time
+  private probeWait = 4;        // seconds of on-time frames before trying a higher level
+  private probedAt = -1;        // governor time of the last step up, to catch probes that fail
+  private governed = 0;         // seconds of drawn motion, the governor's own clock
   private glowTargets: [Target, Target] | null = null;
   private atlas: Atlas | null = null;
   private atlasTex: WebGLTexture | null = null;
@@ -356,6 +387,11 @@ export class Rummy {
     canvas.addEventListener('webglcontextrestored', this.onContextRestored);
     this.watchFont();
     this.schedule();
+  }
+
+  /** Supersampling in effect: the option, unless the governor has shed it. */
+  private get quality(): 1 | 2 {
+    return this.opts.adaptive && LEVELS[this.level].singleSample ? 1 : this.opts.quality;
   }
 
   /** Current options (a copy). */
@@ -572,15 +608,24 @@ export class Rummy {
     this.lumaTarget = this.glyphTarget = null;
   }
 
+  /**
+   * Profiling is a development tool, so its code is a separate chunk loaded on
+   * first use rather than something every production page ships.
+   */
   private setupTimer(): void {
     if (this.opts.profile && !this.timer) {
-      this.timer = new GpuTimer(this.gl);
-      if (!this.timer.supported) this.timer = null;
+      void import('./timer').then(({ GpuTimer }) => {
+        if (!this.opts.profile || this.timer || this.destroyed || this.lost) return;
+        const timer = new GpuTimer(this.gl);
+        if (!timer.supported) return;
+        this.timer = timer;
+        this.stats.gpu = timer.times;
+      });
     } else if (!this.opts.profile && this.timer) {
       this.timer.dispose();
       this.timer = null;
+      this.stats.gpu = null;
     }
-    this.stats.gpu = this.timer ? this.timer.times : null;
   }
 
   private buildSceneProgram(): Program {
@@ -699,7 +744,7 @@ export class Rummy {
     const atlas = this.atlas!;
     const columns = Math.ceil(this.canvas.width / atlas.cellWidth);
     const rows = Math.ceil(this.canvas.height / atlas.cellHeight);
-    const q = this.opts.quality;
+    const q = this.quality;
     const gl = this.gl;
 
     if (this.glyphTarget?.width !== columns || this.glyphTarget?.height !== rows) {
@@ -775,9 +820,11 @@ export class Rummy {
     this.mouse[1] += (this.mouseTarget[1] - this.mouse[1]) * k;
     this.scroll += (this.scrollTarget() - this.scroll) * k;
 
-    const interval = this.opts.maxFps > 0 ? 1000 / this.opts.maxFps : 0;
+    const caps = [this.opts.maxFps, this.opts.adaptive ? LEVELS[this.level].fps : 0].filter((f) => f > 0);
+    const interval = caps.length ? 1000 / Math.min(...caps) : 0;
     const due = now - this.lastDrawn >= interval - 1;
     if ((this.moving || this.dirty || this.refining) && due) {
+      if (this.moving && this.lastDrawn > 0) this.govern(now - this.lastDrawn, interval);
       this.lastDrawn = now;
       this.draw();
       this.fpsFrames++;
@@ -790,6 +837,55 @@ export class Rummy {
     if (!this.moving) this.last = -1;
     this.schedule();
   };
+
+  /**
+   * The frame-time governor. Frames are late when they take noticeably longer
+   * than the target (the display period, or the level's cap). A second of late
+   * frames steps down a level; four on-time seconds probe a level up, and a
+   * probe that fails within two seconds doubles the wait before the next one.
+   */
+  private govern(elapsed: number, cap: number): void {
+    if (!this.opts.adaptive) {
+      this.level = this.stats.level = 0;
+      return;
+    }
+    const dt = Math.min(elapsed, 250) / 1000;
+    this.governed += dt;
+    // The display period is the fastest interval seen, drifting up very slowly
+    // so a monitor change is eventually noticed but slow frames never become
+    // the new normal.
+    this.period = Math.max(5, Math.min(this.period * 1.001, elapsed));
+    this.interval += (elapsed - this.interval) * 0.1;
+    const target = Math.max(this.period, cap);
+    if (this.interval > target * 1.3) {
+      this.lateFor += dt;
+      this.fineFor = 0;
+    } else {
+      this.fineFor += dt;
+      this.lateFor = Math.max(0, this.lateFor - dt);
+    }
+    if (this.lateFor > 1 && this.level < LEVELS.length - 1) {
+      // A probe that failed quickly: wait longer before the next one.
+      if (this.probedAt >= 0 && this.governed - this.probedAt < 2) this.probeWait = Math.min(this.probeWait * 2, 60);
+      this.level++;
+      this.lateFor = this.fineFor = 0;
+      this.interval = target;
+      this.probedAt = -1;
+    } else if (this.fineFor > this.probeWait && this.level > 0) {
+      this.level--;
+      this.fineFor = 0;
+      this.probedAt = this.governed;
+      this.interval = target;
+    }
+    if (this.stats.level !== this.level) {
+      const before = this.sceneTargets?.[0].width;
+      this.stats.level = this.level;
+      // Shedding supersampling changes the scene target's size.
+      if (this.atlas && before !== undefined && before !== (this.glyphTarget?.width ?? 0) * 2 * this.quality) {
+        this.allocateTargets();
+      }
+    }
+  }
 
   /** Where uScroll is heading: one layout read, only from the running loop. */
   private scrollTarget(): number {
@@ -854,7 +950,7 @@ export class Rummy {
     const [jx, jy] = aa > 0 && !this.moving ? jitter(this.accumFrame % 64) : [0, 0];
     this.accumFrame++;
 
-    const glow = o.glow > 0;
+    const glow = o.glow > 0 && (!o.adaptive || LEVELS[this.level].glow);
     timer?.beginFrame(glow ? ['scene', 'glyph', 'glow', 'composite'] : ['scene', 'glyph', 'composite']);
     const sp = programs.scene;
     this.pass(scene, sp);
@@ -862,6 +958,7 @@ export class Rummy {
     gl.uniform1f(sp.u.uTime, this.clock);
     gl.uniform2f(sp.u.uMouse, this.mouse[0], this.mouse[1]);
     gl.uniform1f(sp.u.uScroll, typeof o.scroll === 'number' ? o.scroll : this.scroll);
+    gl.uniform1f(sp.u.uDetail, o.adaptive ? LEVELS[this.level].detail : 1);
     gl.uniform1f(sp.u.uAspect, aspect);
     gl.uniform2f(sp.u.uResolution, scene.width, scene.height);
     gl.uniform2f(sp.u.uOffset, o.offset[0], o.offset[1]);
@@ -881,7 +978,7 @@ export class Rummy {
       const luma = this.lumaTarget!;
       this.pass(luma, lp);
       this.bind(0, scene.textures[0], lp.u.uScene);
-      gl.uniform1i(lp.u.uQuality, o.quality);
+      gl.uniform1i(lp.u.uQuality, this.quality);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
       gl.bindTexture(gl.TEXTURE_2D, luma.textures[0]);
       gl.generateMipmap(gl.TEXTURE_2D);
@@ -916,7 +1013,7 @@ export class Rummy {
     gl.uniform1i(gp.u.uAutoExposure, auto ? 1 : 0);
     gl.uniform1f(gp.u.uExposure, typeof o.exposure === 'number' ? o.exposure : 1);
     gl.uniform1i(gp.u.uCount, atlas.chars.length);
-    gl.uniform1i(gp.u.uQuality, o.quality);
+    gl.uniform1i(gp.u.uQuality, this.quality);
     gl.uniform1i(gp.u.uMode, o.mode === 'density' ? 1 : 0);
     gl.uniform1f(gp.u.uGain, o.gain);
     gl.uniform1f(gp.u.uGamma, o.gamma);
