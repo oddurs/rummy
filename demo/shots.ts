@@ -860,6 +860,87 @@ async function introCheck(intro: IntroStyle): Promise<{ first: number; half: num
   return { first: inked(frames[0]), half: inked(frames[23]), end: inked(last), resolvedFrames };
 }
 
+/**
+ * Pointer effects: cells changed against the same frame without effects, and
+ * how far from the pointer they are. Pointer events are synthesized.
+ */
+async function pointerCheck(effect: 'ripple' | 'lens' | 'shockwave'): Promise<{
+  changed: number;
+  near: number;
+  radiusEarly: number;
+  radiusLate: number;
+  image: string;
+}> {
+  // Twin renderers stepped in lockstep, one without effects: every difference
+  // between them is the effect's.
+  const make = (pointer: Partial<RummyOptions>['pointer']) => {
+    const c = document.createElement('canvas');
+    c.style.cssText = 'position:fixed;left:0;top:0;width:640px;height:360px;';
+    document.body.append(c);
+    const r = new Rummy(c, { ...base, respectReducedMotion: true, antialias: 0, mouse: false, pointer, scene: scenes.globe });
+    r.pause();
+    r.resize();
+    r.time = Rummy.stillOf(scenes.globe);
+    return { c, r };
+  };
+  const plain = make(false);
+  const fx = make({ ripple: 0, lens: 0, shockwave: 0, lensRadius: 0.22, [effect]: 1 });
+  const step = () => {
+    plain.r.step(1 / 60);
+    fx.r.step(1 / 60);
+  };
+  const at = (x: number, y: number, type = 'pointermove') =>
+    window.dispatchEvent(new PointerEvent(type, { clientX: x, clientY: y, bubbles: true }));
+  // Changed cells, and the mean distance (cells, from the pointer) of the changes.
+  const compare = () => {
+    const a = plain.r.toText().split('\n');
+    const b = fx.r.toText().split('\n');
+    const pr = Math.floor(a.length / 2), pc = Math.floor(a[0].length / 2);
+    let n = 0, near = 0, dist = 0, total = 0;
+    for (let y = 0; y < a.length; y++) {
+      for (let x = 0; x < a[y].length; x++) {
+        total++;
+        if (a[y][x] === b[y][x]) continue;
+        n++;
+        const d = Math.hypot((x - pc) * 0.5, y - pr); // cells are about twice as tall as wide
+        dist += d;
+        if (d < a.length * 0.35) near++;
+      }
+    }
+    return { changed: n / total, near: n ? near / n : 1, radius: n ? dist / n : 0 };
+  };
+
+  const cx = 320, cy = 180;
+  if (effect === 'ripple') {
+    for (let i = 0; i < 6; i++) {
+      at(cx - 50 + i * 20, cy);
+      step();
+      step();
+      step();
+    }
+  } else if (effect === 'lens') {
+    at(cx, cy);
+  } else {
+    at(cx, cy);
+    at(cx, cy, 'pointerdown');
+  }
+  step();
+  step();
+  const early = compare();
+  let image = effect === 'shockwave' ? '' : '';
+  for (let i = 0; i < 20; i++) {
+    step();
+    if (i === 8) image = fx.c.toDataURL('image/png'); // mid-effect, for looking at
+  }
+  const late = compare();
+  for (const { r, c } of [plain, fx]) {
+    r.destroy();
+    c.remove();
+  }
+  const main = effect === 'shockwave' ? early : late;
+  return { changed: main.changed, near: main.near, radiusEarly: early.radius, radiusLate: late.radius, image };
+}
+
 /** Frame rate of a playing renderer under given options, in real time. For sizing the governor's levers. */
 async function fpsUnder(options: Partial<RummyOptions>, seconds = 2): Promise<number> {
   const c = document.createElement('canvas');
@@ -977,6 +1058,7 @@ declare global {
       fpsUnder: typeof fpsUnder;
       persistCheck: typeof persistCheck;
       introCheck: typeof introCheck;
+      pointerCheck: typeof pointerCheck;
     };
   }
 }
@@ -1001,6 +1083,7 @@ window.__shots = {
   fpsUnder,
   persistCheck,
   introCheck,
+  pointerCheck,
 };
 
 // Headless runs drive the page themselves; people get the sheet.

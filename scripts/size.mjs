@@ -15,8 +15,9 @@ import { build } from 'vite';
 // Raised deliberately, never silently. History in cairn item 0009:
 // 0.2 set 15 / 12.5 KB. 0.3 went to 15.5 / 13 (custom uniforms), 16.5 / 14
 // (transitions; identifier mangling measured at only 0.17 KB), then 17.5 / 15
-// (intro) for v0.3's seven features at ~0.3 KB each.
-const BUDGET = { library: 17.5 * 1024, core: 15 * 1024 };
+// (intro) for v0.3's seven features at ~0.3 KB each, then 18 / 15.5 for the
+// eighth (pointer effects).
+const BUDGET = { library: 18 * 1024, core: 15.5 * 1024 };
 
 const gz = (s) => gzipSync(s, { level: 9 }).length;
 const kb = (n) => `${(n / 1024).toFixed(2)} KB`;

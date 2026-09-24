@@ -5,6 +5,6 @@ export { scenes, ring, terrain, blobs, globe, tunnel } from './scenes';
 export type { SceneName } from './scenes';
 export { palettes } from './palettes';
 export type { PaletteName } from './palettes';
-export { crtPreset } from './rummy';
-export type { CrtOptions } from './rummy';
+export { crtPreset, pointerPreset } from './rummy';
+export type { CrtOptions, PointerEffects } from './rummy';
 export type { GpuTimes } from './timer';

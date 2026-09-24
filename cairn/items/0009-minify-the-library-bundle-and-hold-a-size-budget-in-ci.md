@@ -76,3 +76,7 @@ Transitions (0022) added 0.88 KB gzipped: the mix shader plus JS. Before raising
 ## v0.3 accounting
 
 The intro (0024) put the core 0.22 KB over 14 KB. Across v0.3 the core went from 12.2 to 14.2 KB for seven features: the boil fix, custom uniforms, scroll, transitions, the governor, persistence and the intro. About 0.3 KB each, with the profiler already moved to a lazy chunk (−0.5 KB). Gates are now 15 KB core / 17.5 KB library. That's the baseline v0.4 starts from, and any increase from here needs its own line in this item.
+
+## Pointer effects
+
+Pointer effects (0023), v0.3's eighth feature and one the accounting above missed, took the core to 15.08 KB. Gates are now 15.5 KB core / 18 KB library. This closes v0.3's growth; v0.4 starts here.

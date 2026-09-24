@@ -181,6 +181,14 @@ uniform float uDirContrast; // contrast against neighbouring cells
 uniform float uEdges;       // silhouette strength 0..1
 uniform float uEdgeThreshold;
 uniform float uCellAspect;  // cell height / width
+// Pointer effects: bend where regions sample the scene, so they work on any scene.
+uniform int uWarp;          // bits: 1 ripple, 2 lens, 4 shockwave
+uniform vec2 uRegions;      // region grid size (cols * 2, rows * 3)
+uniform float uGridAspect;  // grid width / height, so rings stay round
+uniform vec3 uTrail[8];     // recent pointer positions: uv (y up), age in s (< 0: unused)
+uniform float uRipple;      // strength
+uniform vec4 uLens;         // uv, radius (in screen heights), strength
+uniform vec4 uShock;        // uv, age in s, strength
 uniform float uStrokeInk;   // coverage of a line glyph, on the shape-vector scale
 uniform vec3 uFg;
 uniform vec4 uBg;
@@ -236,6 +244,38 @@ float bayer4(ivec2 p) {
   return (float(m[y * 4 + x]) + 0.5) / 16.0;
 }
 
+// Where a region should sample, after pointer effects.
+ivec2 warp(ivec2 p) {
+  if (uWarp == 0) return p;
+  vec2 uv = (vec2(p) + 0.5) / uRegions;
+  vec2 asp = vec2(uGridAspect, 1.0);
+  vec2 off = vec2(0.0);  // in screen-height units
+  if ((uWarp & 1) != 0) {
+    for (int i = 0; i < 8; i++) {
+      float age = uTrail[i].z;
+      if (age < 0.0) continue;
+      vec2 d = (uv - uTrail[i].xy) * asp;
+      float r = length(d);
+      float wave = sin((r - age * 0.5) * 30.0) * exp(-age * 1.4) * exp(-r * 3.5);
+      off += (d / max(r, 1e-4)) * wave * uRipple * 0.03;
+    }
+  }
+  if ((uWarp & 2) != 0) {
+    vec2 d = (uv - uLens.xy) * asp;
+    float r = length(d);
+    // Inside the lens, sample closer to its centre: a 2x magnifier with a soft rim.
+    off -= d * 0.5 * uLens.w * (1.0 - smoothstep(uLens.z * 0.75, uLens.z, r));
+  }
+  if ((uWarp & 4) != 0 && uShock.z >= 0.0) {
+    vec2 d = (uv - uShock.xy) * asp;
+    float r = length(d);
+    float ring = uShock.z * 1.4;
+    float band = exp(-pow((r - ring) / 0.06, 2.0));
+    off -= (d / max(r, 1e-4)) * band * uShock.w * 0.05 * exp(-uShock.z * 1.2);
+  }
+  return ivec2(floor((uv + off / asp) * uRegions));
+}
+
 void main() {
   ivec2 cell = ivec2(gl_FragCoord.xy);
   ivec2 base = cell * ivec2(2, 3);
@@ -252,7 +292,7 @@ void main() {
     int cx = i & 1;       // 0 left, 1 right
     int ry = i >> 1;      // 0 top .. 2 bottom
     ivec2 p = base + ivec2(cx, 2 - ry);
-    vec4 v = region(p);
+    vec4 v = region(warp(p));
     c[i] = v.rgb;
     l[i] = clamp(luma(v.rgb) * gain, 0.0, 1.0);
     d[i] = v.a;
@@ -262,7 +302,7 @@ void main() {
     dmax = max(dmax, v.a);
     // Outward neighbour: sideways for the middle row, diagonal for corners.
     ivec2 dir = ivec2(cx == 0 ? -1 : 1, ry == 0 ? 1 : (ry == 2 ? -1 : 0));
-    e[i] = clamp(luma(region(p + dir).rgb) * gain, 0.0, 1.0);
+    e[i] = clamp(luma(region(warp(p + dir)).rgb) * gain, 0.0, 1.0);
   }
   color /= 6.0;
   lmean /= 6.0;

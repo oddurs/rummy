@@ -185,6 +185,7 @@ All options are optional and can be changed later with `rummy.set()`.
 | `maxDpr` | `2` | Device pixel ratio cap |
 | `timeScale` | `1` | |
 | `mouse` | `true` | Feed the pointer to `uMouse` |
+| `pointer` | `false` | Pointer effects on any scene: `{ ripple, lens, lensRadius, shockwave }`, or `true` for ripples and a click shockwave. Touch works; off under reduced motion |
 | `scroll` | `true` | Feed page scroll to `uScroll`; `false` holds 0; a number drives it yourself. 0 under reduced motion |
 | `pauseOffscreen` | `true` | Stop when scrolled out of view |
 | `respectReducedMotion` | `true` | Hold the scene's still frame under `prefers-reduced-motion` |
