@@ -8,6 +8,7 @@
  *   scroll       uScroll tracks the page with one layout read per frame
  *   transitions  resolve, end on the live frame, and don't jump when interrupted
  *   governor     sheds detail under load, keeps the page responsive, recovers
+ *   persistence  trails of the same length at any frame rate, none under reduced motion
  *   exposure     auto-exposure holds still on a steady source and settles
  *                after a cut without overshooting
  *
@@ -119,6 +120,20 @@ check(gv.governedFps > gv.fixedFps * 1.25, 'shedding keeps the page responsive (
 check(gv.changesWhileSlow <= gv.levelUnderLoad + 2, `no flapping: at most one failed probe under load (${gv.changesWhileSlow} changes)`);
 check(gv.levelAfterRecovery < gv.levelUnderLoad, 'when there is room again it climbs back up');
 check(gv.levelFixed === 0, 'adaptive: false stays at full detail');
+
+// --- persistence -------------------------------------------------------------------------
+const lit = {
+  off: await chrome.evaluate('window.__shots.persistCheck(0, 60)'),
+  at60: await chrome.evaluate('window.__shots.persistCheck(0.85, 60)'),
+  at30: await chrome.evaluate('window.__shots.persistCheck(0.85, 30)'),
+};
+await chrome.emulateMedia({ 'prefers-reduced-motion': 'reduce' });
+lit.reduced = await chrome.evaluate('window.__shots.persistCheck(0.85, 60)');
+await chrome.emulateMedia({ 'prefers-reduced-motion': 'no-preference' });
+console.log(`\npersistence: columns spanned by a moving dot and its trail: off ${lit.off}, 60 fps ${lit.at60}, 30 fps ${lit.at30}, reduced motion ${lit.reduced}`);
+check(lit.at60 > lit.off * 1.5, 'persistence leaves a trail');
+check(Math.abs(lit.at30 - lit.at60) / lit.at60 < 0.25, 'the trail is about as long at 30 fps as at 60 (frame-rate independent)');
+check(lit.reduced <= lit.off * 1.1, 'no trail under reduced motion');
 
 // --- exposure --------------------------------------------------------------------
 const exp = await chrome.evaluate('window.__shots.exposure()');

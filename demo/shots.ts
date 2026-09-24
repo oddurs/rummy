@@ -37,6 +37,13 @@ vec4 scene(vec2 uv) {
 vec4 scene(vec2 uv) {
   return vec4(vec3(step(uv.x, uScroll) * 0.9), 0.5);
 }`,
+  // A bright dot crossing the screen: what persistence leaves behind it.
+  comet: /* glsl */ `
+vec4 scene(vec2 uv) {
+  vec2 p = screen(uv);
+  float x = -1.4 + mod(uTime * 1.3, 2.8);
+  return vec4(vec3(smoothstep(0.14, 0.11, length(p - vec2(x, 0.0)))), 0.5);
+}`,
   // A flat diamond: every silhouette is a 45° diagonal.
   diamond: /* glsl */ `
 vec4 scene(vec2 uv) {
@@ -58,6 +65,8 @@ interface Shot {
   options: Partial<RummyOptions>;
   /** CSS size; default 480x300. */
   size?: [number, number];
+  /** Seconds of motion to step through after the still, for effects that need it. */
+  motion?: number;
   /** Freeze a transition to another scene partway through. */
   transition?: { to: SceneName; style: TransitionStyle; at: number };
 }
@@ -143,6 +152,14 @@ shots.push(
     options: { ...lookDefaults, ...looks.scene.options },
     transition: { to: 'globe', style, at: 0.5 },
   })),
+  // Persistence needs motion: a second of it, with and without the afterglow.
+  { name: 'blobs-persistence', scene: 'blobs', options: { ...lookDefaults, ...looks.crt.options, crt: false }, motion: 1 },
+  {
+    name: 'blobs-no-persistence',
+    scene: 'blobs',
+    options: { ...lookDefaults, ...looks.crt.options, crt: false, persistence: 0 },
+    motion: 1,
+  },
   // Before/after pairs for each look feature.
   // Scroll-driven camera moves, pinned halfway.
   ...(['ring', 'terrain', 'globe', 'tunnel'] as SceneName[]).map((scene): Shot => ({
@@ -231,6 +248,7 @@ async function render(name: string): Promise<string> {
   rummy.resize();
   rummy.time = typeof options.scene === 'string' ? Rummy.stillOf(options.scene) : 0;
   for (let i = 0; i < 17; i++) rummy.render();
+  if (shot.motion) for (let i = 0; i < Math.round(shot.motion * 60); i++) rummy.step(1 / 60);
   if (shot.transition) {
     const { to, style, at } = shot.transition;
     void rummy.transition({ scene: scenes[to] }, { style, duration: 1000 });
@@ -728,7 +746,7 @@ async function governorCheck(): Promise<{
   c.style.width = '240px';
   c.style.height = '135px';
   r.resize();
-  await run(r, 14);
+  await run(r, 20); // room for one failed probe (the wait doubles) and the climb back
   const levelAfterRecovery = r.stats.level;
   r.destroy();
   c.remove();
@@ -744,6 +762,47 @@ async function governorCheck(): Promise<{
     levelFixed,
     load: `${size[0]}x${size[1]}, ${JSON.stringify(load)}`,
   };
+}
+
+/**
+ * Persistence: columns spanned by a moving dot and its trail, stepped for one second at 60 or
+ * 30 fps. Trails should be about the same length either way, and none with
+ * persistence off (or under reduced motion, when emulated).
+ */
+async function persistCheck(persistence: number, fps: number): Promise<number> {
+  const c = document.createElement('canvas');
+  c.style.cssText = 'position:fixed;left:0;top:0;width:640px;height:360px;';
+  document.body.append(c);
+  const r = new Rummy(c, {
+    ...base,
+    respectReducedMotion: true,
+    fg: '#ffffff',
+    bg: '#000000',
+    antialias: 0,
+    glow: 0,
+    persistence,
+    scene: testScenes.comet,
+  });
+  r.pause();
+  r.resize();
+  r.time = 0.5;
+  for (let i = 0; i < fps; i++) r.step(1 / fps);
+  // Trail extent: columns spanned by anything lit. At 30 fps the dot jumps
+  // twice as far per frame, so its trail has gaps; how far back it reaches is
+  // what shows whether it lasts as long.
+  const rows = r.toText().split('\n');
+  let min = Infinity, max = -Infinity;
+  for (const row of rows) {
+    for (let x = 0; x < row.length; x++) {
+      if (row[x] === ' ') continue;
+      min = Math.min(min, x);
+      max = Math.max(max, x);
+    }
+  }
+  const lit = max >= min ? max - min + 1 : 0;
+  r.destroy();
+  c.remove();
+  return lit;
 }
 
 /** Frame rate of a playing renderer under given options, in real time. For sizing the governor's levers. */
@@ -861,6 +920,7 @@ declare global {
       reducedTransitionCheck: typeof reducedTransitionCheck;
       governorCheck: typeof governorCheck;
       fpsUnder: typeof fpsUnder;
+      persistCheck: typeof persistCheck;
     };
   }
 }
@@ -883,6 +943,7 @@ window.__shots = {
   reducedTransitionCheck,
   governorCheck,
   fpsUnder,
+  persistCheck,
 };
 
 // Headless runs drive the page themselves; people get the sheet.
